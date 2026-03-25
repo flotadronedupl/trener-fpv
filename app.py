@@ -16,6 +16,12 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
 
 # ==========================================
+# ZARZĄDZANIE PAMIĘCIĄ SESJI (Dla edycji raportów)
+# ==========================================
+if 'raport_draft' not in st.session_state:
+    st.session_state.raport_draft = None
+
+# ==========================================
 # AUTO-INSTALATOR DEKODERA BETAFLIGHT
 # ==========================================
 @st.cache_resource
@@ -154,7 +160,25 @@ if user_data['rola'] == "Instruktor":
         st.warning("Nie masz jeszcze żadnych zarejestrowanych kursantów!")
     else:
         opcje_kursantow = {k['email']: f"{k['imie']} ({k['email']})" for k in kursanci}
-        wybrany_email = st.selectbox("Wybierz kursanta:", options=list(opcje_kursantow.keys()), format_func=lambda x: opcje_kursantow[x])
+        
+        # Wybór kursanta (Jeśli zmienimy kursanta, resetujemy wygenerowany draft)
+        nowy_wybrany_email = st.selectbox("Wybierz kursanta:", options=list(opcje_kursantow.keys()), format_func=lambda x: opcje_kursantow[x])
+        if 'poprzedni_kursant' not in st.session_state or st.session_state.poprzedni_kursant != nowy_wybrany_email:
+            st.session_state.raport_draft = None
+            st.session_state.poprzedni_kursant = nowy_wybrany_email
+            
+        wybrany_email = nowy_wybrany_email
+        wybrany_kursant_dane = next(k for k in kursanci if k['email'] == wybrany_email)
+
+        # NOWOŚĆ: Historia Zadań dla Instruktora
+        with st.expander(f"📜 Historia zadań kursanta: {wybrany_kursant_dane['imie']}", expanded=False):
+            if len(wybrany_kursant_dane['zadania']) == 0:
+                st.info("Ten kursant nie ma jeszcze żadnych przypisanych zadań.")
+            else:
+                for i, zadanie in enumerate(reversed(wybrany_kursant_dane['zadania'])):
+                    st.markdown(f"**Raport #{len(wybrany_kursant_dane['zadania']) - i}**")
+                    st.markdown(zadanie)
+                    st.divider()
 
         col1, col2 = st.columns(2)
         df = None
@@ -195,7 +219,6 @@ if user_data['rola'] == "Instruktor":
                                 st.error("Nie udało się zbudować dekodera na serwerze.")
                         except Exception as e:
                             st.error(f"⚠️ Wystąpił problem z surowym plikiem BBL: {e}")
-                            st.info("Wyeksportuj log jako .csv w Betaflight Blackbox Explorer i wgraj go tutaj.")
 
                 if df is not None:
                     rc_cols = [col for col in df.columns if 'rcCommand' in col]
@@ -215,84 +238,34 @@ if user_data['rola'] == "Instruktor":
                         )
                         st.info("🧠 Zebrano dane telemetryczne dla AI (Jerk, Średnie Wychylenia).")
 
-                        # ==========================================
                         # INTELIGENTNE SKALOWANIE DANYCH (Cały lot)
-                        # ==========================================
-                        st.subheader("📈 Interaktywna Telemetria (2D)")
-                        
-                        # Obliczamy krok, aby wyświetlić maksymalnie ~5000 punktów z całego lotu
                         krok = max(1, len(df) // 5000)
                         plot_df = df.iloc[::krok].reset_index(drop=True)
-                        st.success(f"Wyświetlam pełny lot (co {krok}-tą klatkę w celu zachowania płynności).")
                         
-                        # ==========================================
-                        # KLASYCZNY WYKRES 2D
-                        # ==========================================
+                        # WYKRES 2D
+                        st.subheader("📈 Interaktywna Telemetria (2D)")
                         fig = go.Figure()
                         fig.add_trace(go.Scatter(y=plot_df[thr_col], mode='lines', name='Throttle (Gaz)', line=dict(color='orange', width=2)))
                         fig.add_trace(go.Scatter(y=plot_df[roll_col], mode='lines', name='Roll (Obrót)', line=dict(color='blue', width=1), opacity=0.7))
                         fig.add_trace(go.Scatter(y=plot_df[pitch_col], mode='lines', name='Pitch (Pochylenie)', line=dict(color='green', width=1), opacity=0.7))
-                        
-                        fig.update_layout(
-                            title="Ruchy drążków na przestrzeni CAŁEGO lotu",
-                            xaxis_title="Oś czasu lotu",
-                            yaxis_title="Wartość z drążka",
-                            template="plotly_dark",
-                            hovermode="x unified",
-                            height=350,
-                            margin=dict(l=0, r=0, t=40, b=0)
-                        )
+                        fig.update_layout(title="Ruchy drążków na przestrzeni CAŁEGO lotu", xaxis_title="Oś czasu lotu", yaxis_title="Wartość z drążka", template="plotly_dark", hovermode="x unified", height=350, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # ==========================================
-                        # IMMERSYJNY TUNEL LOTU (3D)
-                        # ==========================================
+                        # TUNEL 3D
                         st.markdown("---")
                         st.subheader("🪐 Przestrzenny Tunel Lotu (3D)")
-                        st.info("Eksperymentalna symulacja! Oś pionowa to czas lotu, a osie płaskie to Twoje ruchy drążkami. Kolor linii oznacza poziom gazu (niebieski - dół, czerwony - pełny gaz). Obracaj wykres myszką!")
-                        
-                        # Matematyka całkowania ruchów drążków na zeskalowanych danych
                         x_3d = plot_df[roll_col].cumsum() / 500  
                         y_3d = plot_df[pitch_col].cumsum() / 500 
                         z_3d = np.arange(len(plot_df)) 
                         kolor_gazu = plot_df[thr_col] 
                         
-                        fig3d = go.Figure(data=[go.Scatter3d(
-                            x=x_3d,
-                            y=y_3d,
-                            z=z_3d,
-                            mode='lines',
-                            line=dict(
-                                color=kolor_gazu,
-                                colorscale='Jet', 
-                                width=5
-                            )
-                        )])
-                        
-                        fig3d.update_layout(
-                            template="plotly_dark",
-                            margin=dict(l=0, r=0, b=0, t=10),
-                            scene=dict(
-                                xaxis_title='Wychylenie Roll',
-                                yaxis_title='Wychylenie Pitch',
-                                zaxis_title='Czas Lotu (Postęp)',
-                                camera=dict(
-                                    up=dict(x=0, y=0, z=1),
-                                    center=dict(x=0, y=0, z=0),
-                                    eye=dict(x=1.5, y=1.5, z=1.5)
-                                )
-                            ),
-                            height=450
-                        )
+                        fig3d = go.Figure(data=[go.Scatter3d(x=x_3d, y=y_3d, z=z_3d, mode='lines', line=dict(color=kolor_gazu, colorscale='Jet', width=5))])
+                        fig3d.update_layout(template="plotly_dark", margin=dict(l=0, r=0, b=0, t=10), scene=dict(xaxis_title='Roll', yaxis_title='Pitch', zaxis_title='Czas Lotu (Postęp)', camera=dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=1.5, y=1.5, z=1.5))), height=450)
                         st.plotly_chart(fig3d, use_container_width=True)
-
                     else:
                         st.warning("Plik nie zawiera standardowych kolumn 'rcCommand'. Wyświetlam podstawowy wykres.")
                         st.line_chart(df.iloc[:, 1:4].head(2000))
 
-        # ==========================================
-        # MODUŁ WIDEO (CHMURA / LINKI)
-        # ==========================================
         with col2:
             st.markdown("### 🎥 Wideo z lotu")
             st.info("💡 Wklej link do nagrania (YouTube lub Dysk Google), aby ominąć wszelkie limity wielkości plików.")
@@ -310,11 +283,18 @@ if user_data['rola'] == "Instruktor":
                 except Exception as e:
                     st.error("Nie udało się załadować podglądu wideo. Upewnij się, że link jest poprawny.")
 
-        if st.button(f"🚀 Generuj i wyślij zadanie", type="primary"):
+        # ==========================================
+        # SYSTEM GENEROWANIA I ZATWIERDZANIA RAPORTU
+        # ==========================================
+        st.divider()
+        st.subheader("📝 Podsumowanie i ocena lotu")
+        
+        # Przycisk KROK 1: Generowanie brudnopisu
+        if st.button(f"🤖 KROK 1: Generuj wstępny raport AI", type="secondary"):
             if not api_key:
                 st.error("Wklej klucz API w ustawieniach!")
             elif df is not None and statystyki_lotu != "":
-                with st.spinner('AI analizuje parametry lotu i wysyła do bazy...'):
+                with st.spinner('AI analizuje parametry lotu i przygotowuje wersję roboczą...'):
                     try:
                         dostepne_modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                         wybrany_model = next((m for m in dostepne_modele if 'flash' in m.lower()), dostepne_modele[0])
@@ -329,7 +309,6 @@ if user_data['rola'] == "Instruktor":
                         Zinterpretuj te dane. Zwróć uwagę na wskaźnik szarpania (Jerk - idealny pilot ma go jak najniższego). 
                         Napisz dla ucznia krótką, profesjonalną diagnozę (2-3 zdania) i podaj mu 1 konkretne zadanie treningowe na symulator lub na tor, które poprawi jego płynność. Pisz bezpośrednio do ucznia na 'Ty'.
                         """
-                        
                         response = model.generate_content(prompt)
                         nowe_zadanie = response.text
                     except Exception as e:
@@ -337,14 +316,32 @@ if user_data['rola'] == "Instruktor":
 
                     data_wygenerowania = datetime.now().strftime("%Y-%m-%d %H:%M")
                     raport_wideo = f"\n\n**Twój lot:** [Obejrzyj nagranie]({video_url})" if video_url else ""
-                    gotowy_raport = f"**Data:** {data_wygenerowania}\n\n{nowe_zadanie}{raport_wideo}"
+                    gotowy_raport = f"**Data:** {data_wygenerowania}\n\n**Odprawa Instruktorska:**\n{nowe_zadanie}{raport_wideo}"
                     
-                    aktualne_zadania = next(k['zadania'] for k in kursanci if k['email'] == wybrany_email)
-                    aktualne_zadania.append(gotowy_raport)
-                    supabase.table('konta').update({'zadania': aktualne_zadania}).eq('email', wybrany_email).execute()
-                    st.success(f"Zadanie zapisane w bazie chmurowej! Kursant zobaczy je po zalogowaniu.")
+                    # Zapisujemy do pamięci, ale JESZCZE NIE WYSYŁAMY
+                    st.session_state.raport_draft = gotowy_raport
+                    st.rerun() # Odświeżamy stronę, by pokazać pole edycji
             else:
                 st.warning("Najpierw wgraj prawidłowe dane telemetryczne (z kolumnami rcCommand)!")
+
+        # KROK 2: Jeśli raport jest w pamięci sesji, wyświetl pole do edycji
+        if st.session_state.raport_draft is not None:
+            st.success("✅ Sztuczna Inteligencja wygenerowała podsumowanie. Możesz je teraz edytować!")
+            
+            # Edytor tekstu, do którego można wpisać swoje uwagi
+            ostateczny_tekst = st.text_area("Wprowadź swoje poprawki i uwagi przed wysłaniem:", value=st.session_state.raport_draft, height=250)
+            
+            # Przycisk wysyłający ostateczną wersję do bazy Supabase
+            if st.button("🚀 KROK 2: Zatwierdź i wyślij do Kursanta", type="primary"):
+                with st.spinner("Wysyłanie do bazy chmurowej..."):
+                    aktualne_zadania = wybrany_kursant_dane['zadania']
+                    aktualne_zadania.append(ostateczny_tekst)
+                    supabase.table('konta').update({'zadania': aktualne_zadania}).eq('email', wybrany_email).execute()
+                    
+                    st.session_state.raport_draft = None # Czyścimy pamięć brudnopisu po wysłaniu
+                    st.success(f"Zadanie zapisane w bazie! Kursant {wybrany_kursant_dane['imie']} zobaczy je po zalogowaniu.")
+                    time.sleep(2)
+                    st.rerun()
 
 # --- WIDOK 2: KURSANT ---
 elif user_data['rola'] == "Kursant":
