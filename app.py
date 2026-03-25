@@ -11,7 +11,9 @@ import subprocess
 import glob
 import shutil
 import time
+import json
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
 
@@ -29,6 +31,8 @@ except KeyError:
 # ==========================================
 if 'raport_draft' not in st.session_state:
     st.session_state.raport_draft = None
+if 'raport_meta' not in st.session_state:
+    st.session_state.raport_meta = None
 
 # ==========================================
 # AUTO-INSTALATOR DEKODERA BETAFLIGHT
@@ -151,213 +155,286 @@ with st.sidebar:
         st.session_state.zalogowany_uzytkownik = None
         st.rerun()
 
-# --- WIDOK 1: INSTRUKTOR ---
+# ==========================================
+# WIDOK 1: INSTRUKTOR
+# ==========================================
 if user_data['rola'] == "Instruktor":
     st.title("🚁 Panel Instruktora")
 
     wszyscy = supabase.table('konta').select('email, imie, zadania').eq('rola', 'Kursant').execute()
     kursanci = wszyscy.data
 
-    st.subheader("🔍 Przeprowadź Analizę")
-
     if not kursanci:
         st.warning("Nie masz jeszcze żadnych zarejestrowanych kursantów!")
     else:
         opcje_kursantow = {k['email']: f"{k['imie']} ({k['email']})" for k in kursanci}
         
-        # Wybór kursanta 
-        nowy_wybrany_email = st.selectbox("Wybierz kursanta:", options=list(opcje_kursantow.keys()), format_func=lambda x: opcje_kursantow[x])
-        if 'poprzedni_kursant' not in st.session_state or st.session_state.poprzedni_kursant != nowy_wybrany_email:
-            st.session_state.raport_draft = None
-            st.session_state.poprzedni_kursant = nowy_wybrany_email
-            
-        wybrany_email = nowy_wybrany_email
-        wybrany_kursant_dane = next(k for k in kursanci if k['email'] == wybrany_email)
+        col_select, col_video = st.columns([1, 1])
+        with col_select:
+            nowy_wybrany_email = st.selectbox("Wybierz kursanta:", options=list(opcje_kursantow.keys()), format_func=lambda x: opcje_kursantow[x])
+            if 'poprzedni_kursant' not in st.session_state or st.session_state.poprzedni_kursant != nowy_wybrany_email:
+                st.session_state.raport_draft = None
+                st.session_state.poprzedni_kursant = nowy_wybrany_email
+                
+            wybrany_email = nowy_wybrany_email
+            wybrany_kursant_dane = next(k for k in kursanci if k['email'] == wybrany_email)
 
+        with col_video:
+            video_url = st.text_input("🔗 Wklej link do wideo (Dysk/YouTube):")
+
+        # Historia zadań
         with st.expander(f"📜 Historia zadań kursanta: {wybrany_kursant_dane['imie']}", expanded=False):
             if len(wybrany_kursant_dane['zadania']) == 0:
                 st.info("Ten kursant nie ma jeszcze żadnych przypisanych zadań.")
             else:
                 for i, zadanie in enumerate(reversed(wybrany_kursant_dane['zadania'])):
-                    st.markdown(f"**Raport #{len(wybrany_kursant_dane['zadania']) - i}**")
-                    st.markdown(zadanie)
+                    if isinstance(zadanie, dict): # Nowy, ustrukturyzowany format
+                        st.markdown(f"**Raport #{len(wybrany_kursant_dane['zadania']) - i} | Data: {zadanie.get('data', 'Brak')} | Ocena: {zadanie.get('ocena', '?')}/10**")
+                        st.markdown(zadanie.get('raport', ''))
+                        if zadanie.get('wideo'):
+                            st.markdown(f"[🎥 Obejrzyj Lot]({zadanie['wideo']})")
+                    else: # Stary format (czysty string)
+                        st.markdown(f"**Raport #{len(wybrany_kursant_dane['zadania']) - i}**")
+                        st.markdown(zadanie)
                     st.divider()
 
-        col1, col2 = st.columns(2)
+        st.subheader("🔍 Przeprowadź Analizę Logów")
+        uploaded_file = st.file_uploader("Wgraj log z drona (.bbl lub .csv)", type=['bbl', 'csv'])
+        
         df = None
         statystyki_lotu = ""
 
-        with col1:
-            uploaded_file = st.file_uploader("Wgraj log z drona (.bbl lub .csv)", type=['bbl', 'csv'])
+        if uploaded_file:
+            nazwa_pliku = uploaded_file.name.lower()
             
-            if uploaded_file:
-                nazwa_pliku = uploaded_file.name.lower()
+            if nazwa_pliku.endswith('.csv'):
+                st.success("✅ Wgrano gotowy plik CSV.")
+                df = pd.read_csv(uploaded_file)
                 
-                if nazwa_pliku.endswith('.csv'):
-                    st.success("✅ Wgrano gotowy plik CSV. Analizuję...")
-                    df = pd.read_csv(uploaded_file)
-                    
-                elif nazwa_pliku.endswith('.bbl'):
-                    with st.spinner("Kompilowanie narzędzi i dekodowanie czarnej skrzynki..."):
-                        try:
-                            decoder_path = get_decoder_path()
-                            if decoder_path:
-                                for f in glob.glob("/tmp/temp_log*"):
-                                    try: os.remove(f)
-                                    except: pass
-                                    
-                                temp_bbl = "/tmp/temp_log.bbl"
-                                with open(temp_bbl, "wb") as f:
-                                    f.write(uploaded_file.getbuffer())
+            elif nazwa_pliku.endswith('.bbl'):
+                with st.spinner("Dekodowanie czarnej skrzynki w tle..."):
+                    try:
+                        decoder_path = get_decoder_path()
+                        if decoder_path:
+                            for f in glob.glob("/tmp/temp_log*"):
+                                try: os.remove(f)
+                                except: pass
                                 
-                                subprocess.run([decoder_path, temp_bbl], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                                
-                                csv_files = sorted(glob.glob("/tmp/temp_log*.csv"))
-                                if csv_files:
-                                    st.success(f"✅ Pomyślnie rozkodowano plik BBL!")
-                                    df = pd.read_csv(csv_files[0])
-                                else:
-                                    st.error("Dekoder zadziałał, ale nie znalazł danych lotu (być może plik jest pusty).")
+                            temp_bbl = "/tmp/temp_log.bbl"
+                            with open(temp_bbl, "wb") as f:
+                                f.write(uploaded_file.getbuffer())
+                            
+                            subprocess.run([decoder_path, temp_bbl], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            
+                            csv_files = sorted(glob.glob("/tmp/temp_log*.csv"))
+                            if csv_files:
+                                df = pd.read_csv(csv_files[0])
+                                st.success(f"✅ Pomyślnie rozkodowano plik BBL!")
                             else:
-                                st.error("Nie udało się zbudować dekodera na serwerze.")
-                        except Exception as e:
-                            st.error(f"⚠️ Wystąpił problem z surowym plikiem BBL: {e}")
+                                st.error("Dekoder zadziałał, ale plik był pusty.")
+                        else:
+                            st.error("Błąd serwera przy budowie dekodera.")
+                    except Exception as e:
+                        st.error(f"⚠️ Problem z plikiem BBL: {e}")
 
-                if df is not None:
-                    rc_cols = [col for col in df.columns if 'rcCommand' in col]
-                    if len(rc_cols) >= 4:
-                        roll_col, pitch_col, yaw_col, thr_col = rc_cols[0], rc_cols[1], rc_cols[2], rc_cols[3]
-                        
-                        avg_thr = df[thr_col].mean()
-                        jerk_thr = df[thr_col].diff().abs().mean()
-                        jerk_roll = df[roll_col].diff().abs().mean()
-                        jerk_pitch = df[pitch_col].diff().abs().mean()
-                        
-                        statystyki_lotu = (
-                            f"- Średnia wartość przepustnicy (Throttle): {avg_thr:.1f}\n"
-                            f"- Wskaźnik szarpania gazem (Jerk): {jerk_thr:.2f} (im wyższy, tym gorsza płynność)\n"
-                            f"- Wskaźnik szarpania osią Roll: {jerk_roll:.2f}\n"
-                            f"- Wskaźnik szarpania osią Pitch: {jerk_pitch:.2f}"
-                        )
-                        st.info("🧠 Zebrano dane telemetryczne dla AI (Jerk, Średnie Wychylenia).")
+            if df is not None:
+                rc_cols = [col for col in df.columns if 'rcCommand' in col]
+                if len(rc_cols) >= 4:
+                    roll_col, pitch_col, yaw_col, thr_col = rc_cols[0], rc_cols[1], rc_cols[2], rc_cols[3]
+                    
+                    avg_thr = df[thr_col].mean()
+                    jerk_thr = df[thr_col].diff().abs().mean()
+                    jerk_roll = df[roll_col].diff().abs().mean()
+                    jerk_pitch = df[pitch_col].diff().abs().mean()
+                    
+                    # WIDOK PREMIUM: Kafelki statystyk
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                    col_m1.metric("Średni Gaz", f"{avg_thr:.0f}")
+                    col_m2.metric("Szarpanie Gazu", f"{jerk_thr:.2f}", delta="- idealnie < 10" if jerk_thr > 10 else "Dobra płynność", delta_color="inverse")
+                    col_m3.metric("Szarpanie Roll", f"{jerk_roll:.2f}")
+                    col_m4.metric("Szarpanie Pitch", f"{jerk_pitch:.2f}")
 
-                        krok = max(1, len(df) // 5000)
-                        plot_df = df.iloc[::krok].reset_index(drop=True)
-                        
-                        st.subheader("📈 Interaktywna Telemetria (2D)")
+                    statystyki_lotu = f"- Gaz (Średni: {avg_thr:.1f}, Jerk: {jerk_thr:.2f})\n- Roll Jerk: {jerk_roll:.2f}\n- Pitch Jerk: {jerk_pitch:.2f}"
+
+                    krok = max(1, len(df) // 5000)
+                    plot_df = df.iloc[::krok].reset_index(drop=True)
+                    
+                    # WIDOK PREMIUM: Zakładki
+                    tab_2d, tab_3d, tab_bat, tab_vid = st.tabs(["📈 Drążki (2D)", "🪐 Tunel Lotu (3D)", "🔋 Battery Sag", "🎥 Nagranie"])
+                    
+                    with tab_2d:
                         fig = go.Figure()
-                        fig.add_trace(go.Scatter(y=plot_df[thr_col], mode='lines', name='Throttle (Gaz)', line=dict(color='orange', width=2)))
-                        fig.add_trace(go.Scatter(y=plot_df[roll_col], mode='lines', name='Roll (Obrót)', line=dict(color='blue', width=1), opacity=0.7))
-                        fig.add_trace(go.Scatter(y=plot_df[pitch_col], mode='lines', name='Pitch (Pochylenie)', line=dict(color='green', width=1), opacity=0.7))
-                        fig.update_layout(title="Ruchy drążków na przestrzeni CAŁEGO lotu", xaxis_title="Oś czasu lotu", yaxis_title="Wartość z drążka", template="plotly_dark", hovermode="x unified", height=350, margin=dict(l=0, r=0, t=40, b=0))
+                        fig.add_trace(go.Scatter(y=plot_df[thr_col], mode='lines', name='Throttle', line=dict(color='orange', width=2)))
+                        fig.add_trace(go.Scatter(y=plot_df[roll_col], mode='lines', name='Roll', line=dict(color='blue', width=1), opacity=0.7))
+                        fig.add_trace(go.Scatter(y=plot_df[pitch_col], mode='lines', name='Pitch', line=dict(color='green', width=1), opacity=0.7))
+                        fig.update_layout(template="plotly_dark", hovermode="x unified", height=350, margin=dict(l=0, r=0, t=30, b=0))
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        st.markdown("---")
-                        st.subheader("🪐 Przestrzenny Tunel Lotu (3D)")
+                    with tab_3d:
                         x_3d = plot_df[roll_col].cumsum() / 500  
                         y_3d = plot_df[pitch_col].cumsum() / 500 
                         z_3d = np.arange(len(plot_df)) 
                         kolor_gazu = plot_df[thr_col] 
-                        
                         fig3d = go.Figure(data=[go.Scatter3d(x=x_3d, y=y_3d, z=z_3d, mode='lines', line=dict(color=kolor_gazu, colorscale='Jet', width=5))])
-                        fig3d.update_layout(template="plotly_dark", margin=dict(l=0, r=0, b=0, t=10), scene=dict(xaxis_title='Roll', yaxis_title='Pitch', zaxis_title='Czas Lotu (Postęp)', camera=dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=1.5, y=1.5, z=1.5))), height=450)
+                        fig3d.update_layout(template="plotly_dark", margin=dict(l=0, r=0, b=0, t=10), height=450)
                         st.plotly_chart(fig3d, use_container_width=True)
-                    else:
-                        st.warning("Plik nie zawiera standardowych kolumn 'rcCommand'. Wyświetlam podstawowy wykres.")
-                        st.line_chart(df.iloc[:, 1:4].head(2000))
 
-        with col2:
-            st.markdown("### 🎥 Wideo z lotu")
-            st.info("💡 Wklej link do nagrania (YouTube lub Dysk Google), aby ominąć wszelkie limity wielkości plików.")
-            video_url = st.text_input("🔗 Wklej link do wideo:")
-            
-            if video_url:
-                try:
-                    if "drive.google.com" in video_url:
-                        embed_url = video_url.replace('/view', '/preview').split('?')[0]
-                        st.components.v1.iframe(embed_url, height=400)
-                    elif "youtube.com" in video_url or "youtu.be" in video_url:
-                        st.video(video_url)
-                    else:
-                        st.markdown(f"👉 [Kliknij tutaj, aby otworzyć wideo w nowej karcie]({video_url})")
-                except Exception as e:
-                    st.error("Nie udało się załadować podglądu wideo. Upewnij się, że link jest poprawny.")
+                    with tab_bat:
+                        if 'vbatLatest' in df.columns:
+                            st.info("⚡ Wykres pokazuje tzw. Battery Sag. Zobacz, jak napięcie baterii (niebieska linia) spada pod obciążeniem gazu (pomarańczowa przestrzeń).")
+                            fig_bat = make_subplots(specs=[[{"secondary_y": True}]])
+                            # Zwykle vbatLatest w blackboxie to np. 1600 dla 16.0V, dlatego dzielimy przez 100
+                            napiecie = plot_df['vbatLatest'] / 100 
+                            fig_bat.add_trace(go.Scatter(y=napiecie, name="Napięcie (V)", line=dict(color='cyan', width=2)), secondary_y=False)
+                            fig_bat.add_trace(go.Scatter(y=plot_df[thr_col], name="Gaz", fill='tozeroy', line=dict(color='orange'), opacity=0.3), secondary_y=True)
+                            fig_bat.update_layout(template="plotly_dark", height=350, margin=dict(l=0, r=0, t=30, b=0))
+                            fig_bat.update_yaxes(title_text="Napięcie (V)", secondary_y=False)
+                            fig_bat.update_yaxes(title_text="Gaz", secondary_y=True)
+                            st.plotly_chart(fig_bat, use_container_width=True)
+                        else:
+                            st.warning("Twój log nie zawiera kolumny 'vbatLatest' z czujnika baterii.")
+
+                    with tab_vid:
+                        if video_url:
+                            if "drive.google.com" in video_url:
+                                embed_url = video_url.replace('/view', '/preview').split('?')[0]
+                                st.components.v1.iframe(embed_url, height=400)
+                            elif "youtube.com" in video_url or "youtu.be" in video_url:
+                                st.video(video_url)
+                            else:
+                                st.markdown(f"👉 [Otwórz wideo]({video_url})")
+                        else:
+                            st.info("Nie dodano linku do wideo.")
+
+                    # Zapisujemy parametry do meta, żeby użyć w bazie
+                    st.session_state.raport_meta = {
+                        "jerk_roll": float(jerk_roll),
+                        "jerk_pitch": float(jerk_pitch),
+                        "avg_thr": float(avg_thr)
+                    }
 
         st.divider()
-        st.subheader("📝 Podsumowanie i ocena lotu")
+        st.subheader("🤖 Generowanie Wniosków AI")
         
-        if st.button(f"🤖 KROK 1: Generuj wstępny raport AI", type="secondary"):
+        if st.button(f"🪄 Wygeneruj zaawansowany raport JSON", type="secondary"):
             if df is not None and statystyki_lotu != "":
-                with st.spinner('AI analizuje parametry lotu i przygotowuje wersję roboczą...'):
+                with st.spinner('Analiza inżynieryjna w toku...'):
                     try:
                         dostepne_modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                         wybrany_model = next((m for m in dostepne_modele if 'flash' in m.lower()), dostepne_modele[0])
                         model = genai.GenerativeModel(wybrany_model)
                         
                         prompt = f"""
-                        Jesteś eksperckim instruktorem drona FPV (Acro mode). 
-                        Przeanalizowałem matematycznie logi z lotu z czarnej skrzynki mojego kursanta. 
-                        Oto precyzyjne wyniki:
-                        {statystyki_lotu}
+                        Jesteś instruktorem drona FPV. Analizujesz lot kursanta.
+                        Dane: {statystyki_lotu}
                         
-                        Zinterpretuj te dane. Zwróć uwagę na wskaźnik szarpania (Jerk - idealny pilot ma go jak najniższego). 
-                        Napisz dla ucznia krótką, profesjonalną diagnozę (2-3 zdania) i podaj mu 1 konkretne zadanie treningowe na symulator lub na tor, które poprawi jego płynność. Pisz bezpośrednio do ucznia na 'Ty'.
+                        Zwróć odpowiedź WYŁĄCZNIE jako czysty kod JSON o dokładnie takiej strukturze:
+                        {{
+                            "ocena_plynnosci": (podaj ocenę lotu jako liczbę całkowitą od 1 do 10, gdzie 10 to wybitna płynność),
+                            "diagnoza": "(Zwięzła, 2-zdaniowa diagnoza błędów kursanta wynikająca z jerk)",
+                            "zadanie_tor": "(Jedno, konkretne polecenie treningowe na tor z bramkami)",
+                            "zadanie_symulator": "(Jedno ćwiczenie do wykonania w symulatorze Liftoff/Velocidrone)"
+                        }}
+                        Nie dodawaj żadnego tekstu przed ani po JSON-ie!
                         """
                         response = model.generate_content(prompt)
-                        nowe_zadanie = response.text
+                        
+                        # Czyszczenie i parsowanie JSON
+                        raw_json = response.text.replace("```json", "").replace("```", "").strip()
+                        parsed_json = json.loads(raw_json)
+                        
+                        # Tworzymy piękny draft dla instruktora
+                        draft = f"### Ocena Systemu: {parsed_json['ocena_plynnosci']}/10\n\n"
+                        draft += f"**🩺 Diagnoza:**\n{parsed_json['diagnoza']}\n\n"
+                        draft += f"**🏁 Zadanie na torze:**\n{parsed_json['zadanie_tor']}\n\n"
+                        draft += f"**💻 Zadanie na symulator:**\n{parsed_json['zadanie_symulator']}"
+                        
+                        st.session_state.raport_draft = draft
+                        st.session_state.raport_meta['ocena'] = parsed_json['ocena_plynnosci']
+                        st.rerun() 
                     except Exception as e:
-                        nowe_zadanie = f"Błąd AI: {e}. Awaryjne zadanie: Skup się na płynnym przechodzeniu przez bramki."
-
-                    data_wygenerowania = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    raport_wideo = f"\n\n**Twój lot:** [Obejrzyj nagranie]({video_url})" if video_url else ""
-                    gotowy_raport = f"**Data:** {data_wygenerowania}\n\n**Odprawa Instruktorska:**\n{nowe_zadanie}{raport_wideo}"
-                    
-                    st.session_state.raport_draft = gotowy_raport
-                    st.rerun() 
+                        st.error(f"Błąd AI podczas generowania JSON: {e}")
             else:
-                st.warning("Najpierw wgraj prawidłowe dane telemetryczne (z kolumnami rcCommand)!")
+                st.warning("Najpierw wgraj prawidłowe dane telemetryczne!")
 
         if st.session_state.raport_draft is not None:
-            st.success("✅ Sztuczna Inteligencja wygenerowała podsumowanie. Możesz je teraz edytować!")
+            st.success("Wersja robocza utworzona. Edytuj lub zatwierdź.")
             
-            ostateczny_tekst = st.text_area("Wprowadź swoje poprawki i uwagi przed wysłaniem:", value=st.session_state.raport_draft, height=250)
+            ostateczny_tekst = st.text_area("Edytor raportu dla kursanta:", value=st.session_state.raport_draft, height=250)
             
-            if st.button("🚀 KROK 2: Zatwierdź i wyślij do Kursanta", type="primary"):
-                with st.spinner("Wysyłanie do bazy chmurowej..."):
+            if st.button("🚀 Zatwierdź i Wyślij do Bazy Danych", type="primary"):
+                with st.spinner("Zapisywanie logów do bazy..."):
+                    # Nowoczesny, ustrukturyzowany zapis do bazy danych
+                    nowy_wpis_db = {
+                        "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "ocena": st.session_state.raport_meta.get('ocena', 0),
+                        "jerk_roll": st.session_state.raport_meta.get('jerk_roll', 0),
+                        "raport": ostateczny_tekst,
+                        "wideo": video_url if 'video_url' in locals() else ""
+                    }
+                    
                     aktualne_zadania = wybrany_kursant_dane['zadania']
-                    aktualne_zadania.append(ostateczny_tekst)
+                    aktualne_zadania.append(nowy_wpis_db) # Dodajemy paczkę danych (Słownik), a nie zwykły tekst!
                     supabase.table('konta').update({'zadania': aktualne_zadania}).eq('email', wybrany_email).execute()
                     
                     st.session_state.raport_draft = None 
-                    st.success(f"Zadanie zapisane w bazie! Kursant {wybrany_kursant_dane['imie']} zobaczy je po zalogowaniu.")
+                    st.success(f"Profesjonalny raport zapisany! Profil {wybrany_kursant_dane['imie']} zaktualizowany.")
                     time.sleep(2)
                     st.rerun()
 
-# --- WIDOK 2: KURSANT ---
+# ==========================================
+# WIDOK 2: KURSANT (Z Grywalizacją!)
+# ==========================================
 elif user_data['rola'] == "Kursant":
-    st.title(f"🎓 Twój Panel Treningowy")
-    st.info(f"🎟️ **Darmowe analizy (Tokeny):** {user_data['tokeny']} pozostały")
-    st.divider()
-    st.subheader("📋 Twoje Raporty i Zadania od AI")
+    st.title(f"🎓 Twój Panel FPV")
+    
+    col_t1, col_t2 = st.columns(2)
+    col_t1.info(f"🎟️ **Tokeny na analizę:** {user_data['tokeny']}")
+    
     zadania = user_data['zadania']
+    
+    # SYSTEM ŚLEDZENIA POSTĘPÓW (Wykresy ewolucji ucznia)
+    historia_jerk = [z['jerk_roll'] for z in zadania if isinstance(z, dict) and 'jerk_roll' in z]
+    historia_ocen = [z['ocena'] for z in zadania if isinstance(z, dict) and 'ocena' in z]
+    
+    if len(historia_ocen) > 1:
+        with st.container():
+            st.subheader("📈 Twój Rozwój")
+            fig_postepy = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_postepy.add_trace(go.Scatter(y=historia_ocen, mode='lines+markers', name='Ocena AI (1-10)', line=dict(color='gold', width=3)), secondary_y=False)
+            fig_postepy.add_trace(go.Scatter(y=historia_jerk, mode='lines+markers', name='Szarpanie Roll', line=dict(color='cyan', dash='dot')), secondary_y=True)
+            fig_postepy.update_layout(template="plotly_dark", height=300, margin=dict(l=0, r=0, t=10, b=0), hovermode="x unified")
+            st.plotly_chart(fig_postepy, use_container_width=True)
+    elif len(historia_ocen) == 1:
+        col_t2.success(f"🌟 Twój pierwszy lot uzyskał ocenę: {historia_ocen[0]}/10! Lataj dalej, by zobaczyć swój wykres rozwoju.")
+    
+    st.divider()
+    
+    st.subheader("📋 Historia Twoich Treningów")
     if len(zadania) == 0:
-        st.success("Wszystko zrobione! Obecnie nie masz przypisanych żadnych nowych zadań.")
+        st.success("Obecnie nie masz przypisanych żadnych nowych zadań od Instruktora.")
     else:
         for i, zadanie in enumerate(reversed(zadania)):
-            with st.expander(f"Raport z analizy lotu #{len(zadania) - i}", expanded=(i==0)):
-                st.markdown(zadanie)
+            with st.expander(f"Zadanie Treningowe #{len(zadania) - i} " + (f"| Ocena: {zadanie.get('ocena')}/10" if isinstance(zadanie, dict) else ""), expanded=(i==0)):
+                if isinstance(zadanie, dict):
+                    st.caption(f"📅 Data raportu: {zadanie.get('data', 'Brak')}")
+                    st.markdown(zadanie.get('raport', ''))
+                    if zadanie.get('wideo'):
+                        st.markdown(f"**[🎥 Obejrzyj nagranie ze swojego lotu]({zadanie['wideo']})**")
+                else:
+                    st.markdown(zadanie)
                 
     st.divider()
-    st.subheader("📤 Zużyj token i przeanalizuj lot")
-    sim_file = st.file_uploader("Wgraj plik z symulatora (.csv)", type=['csv'])
+    st.subheader("📤 Zużyj token i prześlij nowy lot do oceny")
+    sim_file = st.file_uploader("Wgraj czarną skrzynkę (.bbl)", type=['bbl'])
 
     if sim_file:
-        if st.button("Wyślij do chmury (Zużywa 1 token)"):
+        if st.button("Prześlij do Instruktora (1 Token)"):
             if user_data['tokeny'] > 0:
                 nowe_tokeny = user_data['tokeny'] - 1
                 supabase.table('konta').update({'tokeny': nowe_tokeny}).eq('email', st.session_state.zalogowany_uzytkownik).execute()
-                st.success("Plik wgrany! Trwa analiza... Token zużyty.")
+                st.success("Plik wgrany na serwer! Oczekuj na raport w panelu.")
                 time.sleep(2)
                 st.rerun()
             else:
-                st.error("Nie masz już darmowych tokenów. Skontaktuj się z instruktorem.")
+                st.error("Brak tokenów! Wykup dodatkowe u instruktora.")
