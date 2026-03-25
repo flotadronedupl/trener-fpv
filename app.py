@@ -17,269 +17,248 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # ==========================================
-# 1. KONFIGURACJA UI & CUSTOM CSS (BRANDING)
+# 1. STYLE & BRANDING (Carbon Tech UI)
 # ==========================================
 st.set_page_config(page_title="FPV ACADEMY PRO", page_icon="🚁", layout="wide")
 
 st.markdown("""
     <style>
-    /* Globalny styl Carbon Tech */
-    .stApp {
-        background-color: #0e1117;
-    }
-    .stButton>button {
-        border-radius: 10px;
-        border: 1px solid #00ffcc;
+    .stApp { background-color: #0e1117; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
         background-color: #1a1c23;
-        color: #00ffcc;
-        transition: all 0.3s ease;
-        font-weight: bold;
+        border: 1px solid rgba(0, 255, 204, 0.2);
+        border-radius: 10px 10px 0 0;
+        padding: 10px 20px;
+        color: white;
     }
-    .stButton>button:hover {
-        background-color: #00ffcc;
-        color: #000;
-        box-shadow: 0px 0px 15px #00ffcc;
-    }
-    /* Styl kafelków Launchpad */
+    .stTabs [aria-selected="true"] { border-color: #00ffcc !important; box-shadow: 0 0 10px #00ffcc; }
     .launch-card {
-        padding: 30px;
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 40px;
+        border-radius: 25px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(0, 255, 204, 0.1);
         text-align: center;
-        transition: transform 0.3s ease;
+        transition: all 0.3s ease;
+        margin-bottom: 20px;
     }
-    .launch-card:hover {
-        transform: translateY(-5px);
-        border-color: #00ffcc;
-    }
-    /* Nagłówki */
-    h1, h2, h3 {
-        color: #00ffcc !important;
-        font-family: 'Space Mono', monospace;
-    }
+    .launch-card:hover { border-color: #00ffcc; box-shadow: 0 0 20px rgba(0, 255, 204, 0.2); transform: translateY(-5px); }
+    h1, h2, h3 { color: #00ffcc !important; font-family: 'Space Mono', monospace; }
+    .stMetric { background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 15px; border-left: 5px solid #00ffcc; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. BACKEND & AI ENGINE
+# 2. CORE ENGINES (AI & DECODER)
 # ==========================================
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def get_ai_analysis(prompt):
-    """Inteligentne pobieranie analizy z automatycznym wyborem modelu"""
     try:
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        best_model = next((m for m in available_models if '1.5-flash' in m), available_models[0])
-        model = genai.GenerativeModel(best_model)
-        response = model.generate_content(prompt)
-        return response.text
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        best = next((m for m in models if '1.5-flash' in m), models[0])
+        model = genai.GenerativeModel(best)
+        return model.generate_content(prompt).text
     except Exception as e:
-        return f'{{"ocena": 0, "diagnoza": "AI Offline: {str(e)}", "zadanie": "Spróbuj za chwilę"}}'
+        return f'{{"ocena": 0, "diagnoza": "AI Offline: {str(e)}", "zadanie": "Spróbuj później"}}'
 
 @st.cache_resource
-def get_decoder_path():
-    extract_dir = "/tmp/bbt_source"
-    executable = f"{extract_dir}/blackbox-tools-master/obj/blackbox_decode"
-    if not os.path.exists(executable):
-        os.makedirs(extract_dir, exist_ok=True)
-        url = "https://github.com/betaflight/blackbox-tools/archive/refs/heads/master.zip"
-        urllib.request.urlretrieve(url, "/tmp/b.zip")
-        with zipfile.ZipFile("/tmp/b.zip", 'r') as z: z.extractall(extract_dir)
-        subprocess.run(["make", "obj/blackbox_decode"], cwd=f"{extract_dir}/blackbox-tools-master", check=True)
-    os.chmod(executable, 0o755)
-    return executable
+def get_decoder():
+    path = "/tmp/bbt_source/blackbox-tools-master/obj/blackbox_decode"
+    if not os.path.exists(path):
+        os.makedirs("/tmp/bbt_source", exist_ok=True)
+        urllib.request.urlretrieve("https://github.com/betaflight/blackbox-tools/archive/refs/heads/master.zip", "/tmp/b.zip")
+        with zipfile.ZipFile("/tmp/b.zip", 'r') as z: z.extractall("/tmp/bbt_source")
+        subprocess.run(["make", "obj/blackbox_decode"], cwd="/tmp/bbt_source/blackbox-tools-master", check=True)
+    os.chmod(path, 0o755)
+    return path
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 # ==========================================
-# 3. DASHBOARD ANALITYCZNY (PRO)
+# 3. ANALYTICS DASHBOARD
 # ==========================================
 def render_pro_dashboard(df, mode="drone", show_charts=True):
-    # Detekcja osi
     try:
         thr = [c for c in df.columns if 'rcCommand[3]' in c or ('rcCommand' in c and '3' in c)][0]
         roll = [c for c in df.columns if 'rcCommand[0]' in c or ('rcCommand' in c and '0' in c)][0]
         pitch = [c for c in df.columns if 'rcCommand[1]' in c or ('rcCommand' in c and '1' in c)][0]
     except:
-        st.error("Nieprawidłowy format pliku. Brak kolumn rcCommand.")
+        st.error("Błąd kolumn telemetrii.")
         return None
 
-    j_r = df[roll].diff().abs().mean()
-    j_p = df[pitch].diff().abs().mean()
-    avg_t = df[thr].mean()
+    jr, jp = df[roll].diff().abs().mean(), df[pitch].diff().abs().mean()
     
-    # Grid statystyk
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Średni Gaz", f"{avg_t:.0f}")
-    c2.metric("Płynność Roll (Jerk)", f"{j_r:.2f}")
-    c3.metric("Płynność Pitch (Jerk)", f"{j_p:.2f}")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Średni Gaz", f"{df[thr].mean():.0f}")
+    m2.metric("Płynność Roll", f"{jr:.2f}")
+    m3.metric("Płynność Pitch", f"{jp:.2f}")
     
     if show_charts:
         krok = max(1, len(df)//5000)
         pdf = df.iloc[::krok]
-        
-        tabs = st.tabs(["📈 Analiza 2D", "🪐 Trajektoria 3D", "🔋 Systemy"])
-        with tabs[0]:
-            f2d = go.Figure()
-            f2d.add_trace(go.Scatter(y=pdf[thr], name="Throttle", line=dict(color='#ff9900', width=2)))
-            f2d.add_trace(go.Scatter(y=pdf[roll], name="Roll", line=dict(color='#00ffcc', width=1), opacity=0.5))
-            f2d.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,t=0,b=0))
-            st.plotly_chart(f2d, use_container_width=True)
-        
-        with tabs[1]:
-            f3d = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
-                            mode='lines', line=dict(color=pdf[thr], colorscale='Viridis', width=5))])
-            f3d.update_layout(template="plotly_dark", height=500, margin=dict(l=0,r=0,t=0,b=0))
-            st.plotly_chart(f3d, use_container_width=True)
-            
-        with tabs[2]:
-            if mode == "drone":
-                v_col = [c for c in df.columns if 'vbat' in c.lower()]
-                if v_col:
-                    st.write("⚡ **Battery Sag Analysis**")
-                    f_bat = make_subplots(specs=[[{"secondary_y": True}]])
-                    f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#00ffff')), secondary_y=False)
-                    f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", fill='tozeroy', opacity=0.1), secondary_y=True)
-                    f_bat.update_layout(template="plotly_dark", height=300)
-                    st.plotly_chart(f_bat, use_container_width=True)
-            else:
-                st.info("Dane z symulatora nie zawierają parametrów elektrycznych drona.")
-    
-    return {"j_r": j_r, "ocena": 0}
+        t1, t2, t3 = st.tabs(["📈 Analiza 2D", "🪐 Trajektoria 3D", "🔋 Battery Health"])
+        with t1:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color='#ff9900')))
+            fig.add_trace(go.Scatter(y=pdf[roll], name="Roll", opacity=0.4, line=dict(color='#00ffcc')))
+            fig.update_layout(template="plotly_dark", height=350)
+            st.plotly_chart(fig, use_container_width=True)
+        with t2:
+            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
+                             mode='lines', line=dict(color=pdf[thr], colorscale='Jet', width=5))])
+            fig3.update_layout(template="plotly_dark", height=500)
+            st.plotly_chart(fig3, use_container_width=True)
+        with t3:
+            v_col = [c for c in df.columns if 'vbat' in c.lower()]
+            if v_col:
+                f_bat = make_subplots(specs=[[{"secondary_y": True}]])
+                f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Bateria (V)", line=dict(color='#00ffff')), secondary_y=False)
+                f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", fill='tozeroy', opacity=0.1), secondary_y=True)
+                f_bat.update_layout(template="plotly_dark", height=300)
+                st.plotly_chart(f_bat, use_container_width=True)
+            else: st.info("Brak danych o baterii.")
+    return {"jr": jr, "jp": jp}
 
 # ==========================================
-# 4. SYSTEM SESJI I NAWIGACJI
+# 4. SESSION & AUTH
 # ==========================================
-if 'zalogowany_uzytkownik' not in st.session_state:
-    st.session_state.zalogowany_uzytkownik = None
-if 'app_mode' not in st.session_state:
-    st.session_state.app_mode = "menu" # menu, drone, sim
+if 'zalogowany_uzytkownik' not in st.session_state: st.session_state.zalogowany_uzytkownik = None
+if 'app_mode' not in st.session_state: st.session_state.app_mode = "menu"
+if 'draft' not in st.session_state: st.session_state.draft = None
 
-# --- LOGOWANIE ---
 if st.session_state.zalogowany_uzytkownik is None:
     st.title("🚁 FPV ACADEMY PRO")
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     with t1:
         em = st.text_input("Email")
         pw = st.text_input("Hasło", type="password")
-        if st.button("WEJDŹ DO AKADEMII"):
+        if st.button("WEJDŹ DO PANELU"):
             res = supabase.table('konta').select('*').eq('email', em).execute()
             if res.data and res.data[0]['haslo'] == pw:
                 st.session_state.zalogowany_uzytkownik = em
                 st.rerun()
     st.stop()
 
-# Pobranie danych
 user_data = supabase.table('konta').select('*').eq('email', st.session_state.zalogowany_uzytkownik).execute().data[0]
 
-with st.sidebar:
-    st.subheader(f"Zalogowany: {user_data['imie']}")
-    if st.button("🏠 Menu Główne"):
-        st.session_state.app_mode = "menu"
-        st.rerun()
-    if st.button("🚪 Wyloguj"):
-        st.session_state.zalogowany_uzytkownik = None
-        st.rerun()
+# ==========================================
+# 5. INSTRUKTOR VIEW
+# ==========================================
+if user_data['rola'] == "Instruktor":
+    st.title("👨‍🏫 Master Instructor Dashboard")
+    
+    with st.sidebar:
+        st.write(f"Zalogowany: **{user_data['imie']}**")
+        if st.button("🏠 Reset Widoku"): st.session_state.draft = None; st.rerun()
+        if st.button("🚪 Wyloguj"): st.session_state.zalogowany_uzytkownik = None; st.rerun()
+
+    kursanci = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
+    wybrany_em = st.selectbox("Wybierz Kursanta do odprawy:", [k['email'] for k in kursanci])
+    k_data = next(k for k in kursanci if k['email'] == wybrany_em)
+
+    with st.expander("📜 Ostatnie zadania tego kursanta"):
+        for z in reversed(k_data['zadania'][-3:]):
+            st.write(f"**{z.get('data')} | Ocena: {z.get('ocena')}/10**")
+            st.caption(z.get('raport')[:100] + "...")
+            st.divider()
+
+    col_l, col_v = st.columns(2)
+    with col_l: log = st.file_uploader("Wgraj log lotu", type=['bbl', 'csv'])
+    with col_v: v_url = st.text_input("Link do nagrania (YouTube/Drive):")
+
+    df_active = None
+    if log:
+        if log.name.endswith('.csv'): df_active = pd.read_csv(log)
+        else:
+            with st.spinner("Dekodowanie..."):
+                dec = get_decoder()
+                with open("/tmp/i.bbl", "wb") as f: f.write(log.getbuffer())
+                subprocess.run([dec, "/tmp/i.bbl"])
+                csvs = sorted(glob.glob("/tmp/i*.csv"))
+                if csvs: df_active = pd.read_csv(csvs[0])
+
+    if df_active is not None:
+        stats = render_pro_dashboard(df_active)
+        if st.button("🤖 GENERUJ PROPOZYCJĘ AI"):
+            p = f"Instruktor FPV ocenia lot. Roll Jerk: {stats['jr']:.2f}. Zwróć JSON: {{'ocena': 1-10, 'diagnoza': '...', 'zadanie': '...'}}"
+            raw = get_ai_analysis(p)
+            try:
+                js = json.loads(raw.replace("```json","").replace("```","").strip())
+                st.session_state.draft = f"### Ocena Systemu: {js['ocena']}/10\n\n**Odprawa Instruktorska:**\n{js['diagnoza']}\n\n**Zadanie:**\n{js['zadanie']}"
+                st.session_state.temp_jr = stats['jr']
+            except: st.error("AI błąd formatowania.")
+
+    if st.session_state.draft:
+        st.subheader("📝 Edytuj raport przed wysłaniem")
+        final_rep = st.text_area("Możesz zmienić treść lub ocenę ręcznie:", value=st.session_state.draft, height=250)
+        if st.button("🚀 ZATWIERDŹ I WYŚLIJ DO KURSANTA", type="primary"):
+            score = int(re.search(r"Ocena Systemu: (\d+)/10", final_rep).group(1)) if "Ocena Systemu" in final_rep else 5
+            nowy = {"data": datetime.now().strftime("%Y-%m-%d %H:%M"), "ocena": score, "raport": final_rep, "wideo": v_url, "jerk": st.session_state.get('temp_jr',0), "premium": True}
+            zads = k_data['zadania']
+            zads.append(nowy)
+            supabase.table('konta').update({"zadania": zads}).eq('email', wybrany_em).execute()
+            st.session_state.draft = None
+            st.success("Raport wysłany pomyślnie!")
+            time.sleep(1); st.rerun()
 
 # ==========================================
-# 5. WIDOK: LAUNCHPAD (MENU WYBORU)
-# ==========================================
-if st.session_state.app_mode == "menu":
-    st.title("🚀 Wybierz moduł szkoleniowy")
-    st.write("Wybierz rodzaj danych, które chcesz dzisiaj przeanalizować.")
-    
-    col_drone, col_sim = st.columns(2)
-    
-    with col_drone:
-        st.markdown('<div class="launch-card"><h2>🚁 REAL FLIGHT</h2><p>Analiza czarnej skrzynki z drona. Pełna telemetria, stan baterii i tunel 3D.</p></div>', unsafe_allow_html=True)
-        if st.button("ANALIZUJ LOGI Z DRONA", use_container_width=True):
-            st.session_state.app_mode = "drone"
-            st.rerun()
-            
-    with col_sim:
-        st.markdown('<div class="launch-card"><h2>🎮 SIMULATOR</h2><p>Analiza treningu z Liftoff / Velocidrone. Skupienie na płynności i technice drążków.</p></div>', unsafe_allow_html=True)
-        if st.button("ANALIZUJ TRENING SIM", use_container_width=True):
-            st.session_state.app_mode = "sim"
-            st.rerun()
-
-# ==========================================
-# 6. WIDOK: ANALIZA (DRON LUB SIM)
+# 6. KURSANT VIEW (LAUNCHPAD)
 # ==========================================
 else:
-    mode = st.session_state.app_mode
-    label = "🚁 REAL FLIGHT" if mode == "drone" else "🎮 SIMULATOR"
-    st.title(label)
-    
-    # --- INSTRUKCJE (POPOVER) ---
-    with st.popover("❓ Jak przygotować plik? (Instrukcja)"):
-        if mode == "drone":
-            st.markdown("""
-            **Krok po kroku (Blackbox):**
-            1. Podłącz drona do Betaflight.
-            2. W zakładce **Blackbox** wybierz 'Onboard Flash' lub 'SD Card'.
-            3. Sprawdź czy `Blackbox logging rate` jest ustawiony na 1kHz lub 2kHz.
-            4. Po locie pobierz plik `.bbl` i wgraj go tutaj.
-            """)
-        else:
-            st.markdown("""
-            **Krok po kroku (Simulator):**
-            1. **Liftoff:** Logi są w folderze gry `Documents/Liftoff/Logs`.
-            2. **Velocidrone:** Włącz 'Logging' w ustawieniach i wyeksportuj do `.csv`.
-            3. Wgraj wygenerowany plik tutaj.
-            """)
+    if st.session_state.app_mode == "menu":
+        st.title("🚀 Wybierz moduł treningowy")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div class="launch-card"><h2>🚁 REAL FLIGHT</h2><p>Analiza czarnej skrzynki. Bateria i tunel 3D.</p></div>', unsafe_allow_html=True)
+            if st.button("ANALIZA LOGÓW DRONA"): st.session_state.app_mode = "drone"; st.rerun()
+        with c2:
+            st.markdown('<div class="launch-card"><h2>🎮 SIMULATOR</h2><p>Trening płynności z Liftoff/Velocidrone.</p></div>', unsafe_allow_html=True)
+            if st.button("ANALIZA TRENINGU SIM"): st.session_state.app_mode = "sim"; st.rerun()
+            
+        st.divider()
+        st.subheader("📈 Twoja Krzywa Rozwoju")
+        zads = user_data.get('zadania', [])
+        if len(zads) > 1:
+            oceny = [z['ocena'] for z in zads if isinstance(z, dict) and 'ocena' in z]
+            st.plotly_chart(go.Figure(go.Scatter(y=oceny, mode='lines+markers', line=dict(color='#00ffcc', width=3))).update_layout(template="plotly_dark", height=250), use_container_width=True)
 
-    # --- UPLOADER ---
-    u_file = st.file_uploader(f"Wgraj log ({'BBL' if mode=='drone' else 'CSV'})", type=['bbl', 'csv'])
-    
-    if u_file:
-        df = None
-        if mode == "drone" and u_file.name.endswith('.bbl'):
-            with st.spinner("Dekodowanie czarnej skrzynki..."):
-                dec = get_decoder_path()
-                with open("/tmp/temp.bbl", "wb") as f: f.write(u_file.getbuffer())
-                subprocess.run([dec, "/tmp/temp.bbl"])
-                csvs = sorted(glob.glob("/tmp/temp*.csv"))
-                if csvs: df = pd.read_csv(csvs[0])
-        else:
-            df = pd.read_csv(u_file)
+    else:
+        st.header("📤 Nowy Log do analizy")
+        if st.button("⬅️ Powrót"): st.session_state.app_mode = "menu"; st.rerun()
+        
+        with st.popover("❓ Instrukcja"):
+            st.write("Wgraj plik .bbl z drona lub .csv z symulatora.")
 
-        if df is not None:
-            # Wybór pakietu (Biznesowa logika tokenów)
-            col_t1, col_t2 = st.columns(2)
-            with col_t1:
-                st.info(f"Twoje tokeny: {user_data['tokeny']} 🎟️")
-                pakiet = st.radio("Wybierz pakiet analizy:", ["📄 Basic (1 Token)", "💎 Premium (2 Tokeny)"])
-                koszt = 1 if "Basic" in pakiet else 2
-
-            if st.button(f"🚀 URUCHOM ANALIZĘ ({koszt} Tokeny)"):
+        col_t1, col_t2 = st.columns([1, 2])
+        with col_t1:
+            st.metric("Tokeny 🎟️", user_data['tokeny'])
+            pakiet = st.radio("Wybierz:", ["📄 Basic (1 Token)", "💎 Premium (2 Tokeny)"])
+            koszt = 1 if "Basic" in pakiet else 2
+        with col_t2:
+            u_log = st.file_uploader("Wgraj plik", type=['bbl', 'csv'])
+            if u_log and st.button(f"Start {pakiet}"):
                 if user_data['tokeny'] >= koszt:
-                    with st.spinner("AI przetwarza Twój lot..."):
-                        stats = render_pro_dashboard(df, mode=mode, show_charts=(koszt==2))
-                        
-                        # AI Raport
-                        prompt = f"Analiza FPV. Jerk: {stats['j_r']:.2f}. Podaj JSON: {{'ocena': 1-10, 'diagnoza': '...', 'zadanie': '...'}}"
-                        ai_raw = get_ai_analysis(prompt)
-                        try:
-                            js = json.loads(ai_raw.replace("```json","").replace("```","").strip())
-                            txt = f"### {'💎 PREMIUM' if koszt==2 else '📄 BASIC'} RAPORT\n\n**Ocena:** {js['ocena']}/10\n\n{js['diagnoza']}\n\n**Trening:** {js['zadanie']}"
-                            
-                            # Zapis do bazy
-                            nowy = {"data": datetime.now().strftime("%Y-%m-%d"), "ocena": js['ocena'], "raport": txt, "premium": (koszt==2)}
-                            zads = user_data['zadania']
-                            zads.append(nowy)
-                            supabase.table('konta').update({"zadania": zads, "tokeny": user_data['tokeny'] - koszt}).eq('email', user_data['email']).execute()
-                            st.balloons()
-                            st.success("Analiza zakończona! Sprawdź historię poniżej.")
-                            time.sleep(1)
+                    with st.spinner("AI pracuje..."):
+                        # Dekodowanie i analiza (skrócona logika dla kursanta)
+                        dec = get_decoder()
+                        with open("/tmp/u.bbl", "wb") as f: f.write(u_log.getbuffer())
+                        subprocess.run([dec, "/tmp/u.bbl"])
+                        csvs = sorted(glob.glob("/tmp/u*.csv"))
+                        if csvs:
+                            df = pd.read_csv(csvs[0])
+                            if koszt == 2: render_pro_dashboard(df, mode=st.session_state.app_mode)
+                            raw_ai = get_ai_analysis("Analiza FPV. Podaj JSON z oceną 1-10 i diagnozą.")
+                            js = json.loads(raw_ai.replace("```json","").replace("```","").strip())
+                            txt = f"### {pakiet} RAPORT\n\n**Ocena:** {js['ocena']}/10\n\n{js['diagnoza']}"
+                            user_data['zadania'].append({"data": datetime.now().strftime("%Y-%m-%d"), "ocena": js['ocena'], "raport": txt, "premium": (koszt==2)})
+                            supabase.table('konta').update({"zadania": user_data['zadania'], "tokeny": user_data['tokeny']-koszt}).eq('email', user_data['email']).execute()
                             st.rerun()
-                        except: st.error("AI błąd formatowania. Spróbuj ponownie.")
                 else: st.error("Brak tokenów!")
 
-    # --- HISTORIA ---
-    st.divider()
     st.subheader("📋 Twoja Historia")
-    for z in reversed(user_data['zadania']):
+    for z in reversed(user_data.get('zadania', [])):
         if isinstance(z, dict):
             with st.expander(f"{z.get('data')} | Ocena: {z.get('ocena')}/10"):
                 st.markdown(z.get('raport'))
+                if z.get('wideo'): st.video(z.get('wideo'))
