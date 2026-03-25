@@ -6,61 +6,52 @@ from datetime import datetime
 from supabase import create_client, Client
 import os
 import urllib.request
-import tarfile
+import zipfile
 import subprocess
 import glob
+import shutil
+import time
 
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
-
 
 # ==========================================
 # AUTO-INSTALATOR DEKODERA BETAFLIGHT (Działa w tle na serwerze)
 # ==========================================
 @st.cache_resource
 def get_decoder_path():
-    import os, urllib.request, tarfile, glob, shutil
-    url = "https://github.com/betaflight/blackbox-tools/releases/download/v0.4.3/blackbox-tools-0.4.3-linux.tar.gz"
-    tar_path = "/tmp/bbt.tar.gz"
-    extract_dir = "/tmp/bbt_extracted"
+    extract_dir = "/tmp/bbt_source"
+    zip_path = "/tmp/bbt_src.zip"
+    executable = f"{extract_dir}/blackbox-tools-master/obj/blackbox_decode"
     
-    # Zabezpieczenie: Jeśli katalog istnieje, ale jest pusty/zepsuty, usuwamy go
-    if os.path.exists(extract_dir) and not glob.glob(f"{extract_dir}/**/blackbox_decode", recursive=True):
-        shutil.rmtree(extract_dir)
-        
-    if not os.path.exists(extract_dir):
+    if not os.path.exists(executable):
+        if os.path.exists(extract_dir):
+            shutil.rmtree(extract_dir)
         os.makedirs(extract_dir, exist_ok=True)
         
-        # Pobieranie z maskowaniem
+        # Pobieramy czysty kod źródłowy z GitHuba
+        url = "https://github.com/betaflight/blackbox-tools/archive/refs/heads/master.zip"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req) as response, open(tar_path, 'wb') as out_file:
-            out_file.write(response.read())
+        
+        try:
+            with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+                out_file.write(response.read())
+                
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+                
+            # KOMPILACJA NA ŻYWO NA SERWERZE (Magia Linuxa)
+            source_dir = f"{extract_dir}/blackbox-tools-master"
+            subprocess.run(["make", "obj/blackbox_decode"], cwd=source_dir, check=True, capture_output=True)
             
-        # Rozpakowywanie
-        with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(path=extract_dir)
+        except Exception as e:
+            st.cache_resource.clear()
+            raise RuntimeError(f"Serwer nie poradził sobie z kompilacją kodu: {e}")
             
-    # Szukamy pliku i nadajemy mu uprawnienia
-    executable = glob.glob(f"{extract_dir}/**/blackbox_decode", recursive=True)
-    if executable:
-        os.chmod(executable[0], 0o755)
-        return executable[0]
-    else:
-        # To zapobiegnie zapamiętaniu błędu przez Cache!
-        st.cache_resource.clear()
-        raise RuntimeError("Nie udało się znaleźć pliku dekodera po pobraniu.")
-    
-    # Jeśli serwer jeszcze nie ma dekodera, pobiera go z internetu
-    if not os.path.exists(extract_dir):
-        os.makedirs(extract_dir, exist_ok=True)
-        urllib.request.urlretrieve(url, tar_path)
-        with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(path=extract_dir)
-            
-    # Znajduje plik wykonywalny i nadaje mu uprawnienia
-    executable = glob.glob(f"{extract_dir}/**/blackbox_decode", recursive=True)
-    if executable:
-        os.chmod(executable[0], 0o755)
-        return executable[0]
+    if os.path.exists(executable):
+        os.chmod(executable, 0o755)
+        return executable
+        
+    st.cache_resource.clear()
     return None
 
 # ==========================================
@@ -130,8 +121,12 @@ if st.session_state.zalogowany_uzytkownik is None:
 # ==========================================
 # WŁAŚCIWA APLIKACJA (Po zalogowaniu)
 # ==========================================
-odp = supabase.table('konta').select('*').eq('email', st.session_state.zalogowany_uzytkownik).execute()
-user_data = odp.data[0]
+try:
+    odp = supabase.table('konta').select('*').eq('email', st.session_state.zalogowany_uzytkownik).execute()
+    user_data = odp.data[0]
+except Exception as e:
+    st.error("Błąd pobierania danych z bazy. Odśwież stronę.")
+    st.stop()
 
 with st.sidebar:
     st.image("https://images.unsplash.com/photo-1581404112613-3345155f308a?auto=format&fit=crop&q=80&w=200", caption="FPV Academy")
@@ -166,44 +161,51 @@ if user_data['rola'] == "Instruktor":
         df = None
 
         with col1:
-            # Zmiana: Teraz przyjmujemy surowe pliki .BBL!
-            bbl_file = st.file_uploader("Wgraj SUROWY log z drona (.bbl)", type=['bbl'])
+            # PANCERNA OBSŁUGA PLIKÓW: BBL oraz CSV
+            uploaded_file = st.file_uploader("Wgraj log z drona (.bbl lub .csv)", type=['bbl', 'csv'])
             
-            if bbl_file:
-                with st.spinner("Dekodowanie czarnej skrzynki..."):
-                    decoder_path = get_decoder_path()
+            if uploaded_file:
+                # Scenariusz 1: Użytkownik wgrał plik CSV (działa po staremu!)
+                if uploaded_file.name.endswith('.csv'):
+                    st.success("✅ Wgrano gotowy plik CSV. Analizuję...")
+                    df = pd.read_csv(uploaded_file)
                     
-                    if decoder_path:
-                        # Czyszczenie starych plików tymczasowych
-                        for f in glob.glob("/tmp/temp_log*"):
-                            os.remove(f)
-                            
-                        # Zapisanie pliku .bbl na serwerze
-                        temp_bbl = "/tmp/temp_log.bbl"
-                        with open(temp_bbl, "wb") as f:
-                            f.write(bbl_file.getbuffer())
-                        
-                        # Odpalenie dekodera
-                        subprocess.run([decoder_path, temp_bbl], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        
-                        # Szukanie wygenerowanego pliku CSV (Betaflight dodaje numery np. 01, 02)
-                        csv_files = sorted(glob.glob("/tmp/temp_log*.csv"))
-                        
-                        if csv_files:
-                            st.success(f"✅ Rozkodowano lot! Znaleziono zapisów: {len(csv_files)}. Analizuję pierwszy lot.")
-                            df = pd.read_csv(csv_files[0])
-                            
-                            # Próba narysowania wykresu (szukamy kolumn z gazem i osiami)
-                            rc_cols = [col for col in df.columns if 'rcCommand' in col]
-                            if rc_cols:
-                                st.line_chart(df[rc_cols].head(2000)) # Rysujemy początek lotu
+                # Scenariusz 2: Użytkownik wgrał surowy plik BBL
+                elif uploaded_file.name.endswith('.bbl'):
+                    with st.spinner("Kompilowanie narzędzi i dekodowanie czarnej skrzynki..."):
+                        try:
+                            decoder_path = get_decoder_path()
+                            if decoder_path:
+                                for f in glob.glob("/tmp/temp_log*"):
+                                    try: os.remove(f)
+                                    except: pass
+                                    
+                                temp_bbl = "/tmp/temp_log.bbl"
+                                with open(temp_bbl, "wb") as f:
+                                    f.write(uploaded_file.getbuffer())
+                                
+                                subprocess.run([decoder_path, temp_bbl], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                
+                                csv_files = sorted(glob.glob("/tmp/temp_log*.csv"))
+                                if csv_files:
+                                    st.success(f"✅ Pomyślnie rozkodowano plik BBL!")
+                                    df = pd.read_csv(csv_files[0])
+                                else:
+                                    st.error("Dekoder zadziałał, ale nie wygenerował pliku CSV.")
                             else:
-                                st.info("Brak kolumn RC. Wyświetlam inne dane telemetryczne.")
-                                st.line_chart(df.iloc[:, 1:4].head(2000))
-                        else:
-                            st.error("Nie udało się wyciągnąć danych z tego pliku .bbl.")
+                                st.error("Nie udało się zbudować dekodera na serwerze.")
+                        except Exception as e:
+                            st.error(f"⚠️ Wystąpił problem z surowym plikiem BBL: {e}")
+                            st.info("Zalecenie: Twój stary sprawdzony sposób działa! Wyeksportuj log jako .csv w Betaflight Blackbox Explorer i wgraj go tutaj.")
+
+                # Rysowanie wykresu
+                if df is not None:
+                    rc_cols = [col for col in df.columns if 'rcCommand' in col]
+                    if rc_cols:
+                        st.line_chart(df[rc_cols].head(2000))
                     else:
-                        st.error("Błąd krytyczny: Nie udało się zainstalować dekodera na serwerze.")
+                        st.info("Brak kolumn RC. Wyświetlam inne dane telemetryczne.")
+                        st.line_chart(df.iloc[:, 1:4].head(2000))
 
         with col2:
             video_file = st.file_uploader("Wgraj wideo z drona (.mp4)", type=['mp4'])
@@ -220,14 +222,13 @@ if user_data['rola'] == "Instruktor":
                         wybrany_model = next((m for m in dostepne_modele if 'flash' in m.lower()), dostepne_modele[0])
                         model = genai.GenerativeModel(wybrany_model)
                         
-                        # Wysyłamy do AI proste statystyki z lotu, by nie przeciążyć limitów
                         probka_danych = df.head(100).to_string()
                         prompt = f"Jesteś instruktorem FPV. Oto próbka danych z drona:\n{probka_danych}\nZwróć uwagę na płynność i wymyśl jedno konkretne zadanie poprawkowe dla kursanta. Bądź profesjonalny i zwięzły."
                         
                         response = model.generate_content(prompt)
                         nowe_zadanie = response.text
                     except Exception as e:
-                        nowe_zadanie = f"Błąd w komunikacji z Gemini. System awaryjnie przypisał trening: Skup się na płynnym przechodzeniu przez bramki. ({e})"
+                        nowe_zadanie = f"Błąd AI: {e}. Awaryjne zadanie: Skup się na płynnym przechodzeniu przez bramki."
 
                     data_wygenerowania = datetime.now().strftime("%Y-%m-%d %H:%M")
                     gotowy_raport = f"**Data:** {data_wygenerowania}\n\n{nowe_zadanie}"
@@ -251,3 +252,18 @@ elif user_data['rola'] == "Kursant":
         for i, zadanie in enumerate(reversed(zadania)):
             with st.expander(f"Raport z analizy lotu #{len(zadania) - i}", expanded=(i==0)):
                 st.markdown(zadanie)
+                
+    st.divider()
+    st.subheader("📤 Zużyj token i przeanalizuj lot")
+    sim_file = st.file_uploader("Wgraj plik z symulatora (.csv)", type=['csv'])
+
+    if sim_file:
+        if st.button("Wyślij do chmury (Zużywa 1 token)"):
+            if user_data['tokeny'] > 0:
+                nowe_tokeny = user_data['tokeny'] - 1
+                supabase.table('konta').update({'tokeny': nowe_tokeny}).eq('email', st.session_state.zalogowany_uzytkownik).execute()
+                st.success("Plik wgrany! Trwa analiza... Token zużyty.")
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.error("Nie masz już darmowych tokenów. Skontaktuj się z instruktorem.")
