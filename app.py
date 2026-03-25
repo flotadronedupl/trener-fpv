@@ -16,7 +16,16 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
 
 # ==========================================
-# ZARZĄDZANIE PAMIĘCIĄ SESJI (Dla edycji raportów)
+# KONFIGURACJA API GEMINI (Z Bezpiecznych Sekretów)
+# ==========================================
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+except KeyError:
+    st.error("🚨 Brak klucza API Gemini! Dodaj GEMINI_API_KEY w ustawieniach Secrets na stronie Streamlit Cloud.")
+    st.stop()
+
+# ==========================================
+# ZARZĄDZANIE PAMIĘCIĄ SESJI
 # ==========================================
 if 'raport_draft' not in st.session_state:
     st.session_state.raport_draft = None
@@ -149,11 +158,6 @@ if user_data['rola'] == "Instruktor":
     wszyscy = supabase.table('konta').select('email, imie, zadania').eq('rola', 'Kursant').execute()
     kursanci = wszyscy.data
 
-    with st.expander("⚙️ Ustawienia API (Rozwiń)"):
-        api_key = st.text_input("Wklej klucz API Gemini:", type="password")
-        if api_key:
-            genai.configure(api_key=api_key)
-
     st.subheader("🔍 Przeprowadź Analizę")
 
     if not kursanci:
@@ -161,7 +165,7 @@ if user_data['rola'] == "Instruktor":
     else:
         opcje_kursantow = {k['email']: f"{k['imie']} ({k['email']})" for k in kursanci}
         
-        # Wybór kursanta (Jeśli zmienimy kursanta, resetujemy wygenerowany draft)
+        # Wybór kursanta 
         nowy_wybrany_email = st.selectbox("Wybierz kursanta:", options=list(opcje_kursantow.keys()), format_func=lambda x: opcje_kursantow[x])
         if 'poprzedni_kursant' not in st.session_state or st.session_state.poprzedni_kursant != nowy_wybrany_email:
             st.session_state.raport_draft = None
@@ -170,7 +174,6 @@ if user_data['rola'] == "Instruktor":
         wybrany_email = nowy_wybrany_email
         wybrany_kursant_dane = next(k for k in kursanci if k['email'] == wybrany_email)
 
-        # NOWOŚĆ: Historia Zadań dla Instruktora
         with st.expander(f"📜 Historia zadań kursanta: {wybrany_kursant_dane['imie']}", expanded=False):
             if len(wybrany_kursant_dane['zadania']) == 0:
                 st.info("Ten kursant nie ma jeszcze żadnych przypisanych zadań.")
@@ -238,11 +241,9 @@ if user_data['rola'] == "Instruktor":
                         )
                         st.info("🧠 Zebrano dane telemetryczne dla AI (Jerk, Średnie Wychylenia).")
 
-                        # INTELIGENTNE SKALOWANIE DANYCH (Cały lot)
                         krok = max(1, len(df) // 5000)
                         plot_df = df.iloc[::krok].reset_index(drop=True)
                         
-                        # WYKRES 2D
                         st.subheader("📈 Interaktywna Telemetria (2D)")
                         fig = go.Figure()
                         fig.add_trace(go.Scatter(y=plot_df[thr_col], mode='lines', name='Throttle (Gaz)', line=dict(color='orange', width=2)))
@@ -251,7 +252,6 @@ if user_data['rola'] == "Instruktor":
                         fig.update_layout(title="Ruchy drążków na przestrzeni CAŁEGO lotu", xaxis_title="Oś czasu lotu", yaxis_title="Wartość z drążka", template="plotly_dark", hovermode="x unified", height=350, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # TUNEL 3D
                         st.markdown("---")
                         st.subheader("🪐 Przestrzenny Tunel Lotu (3D)")
                         x_3d = plot_df[roll_col].cumsum() / 500  
@@ -283,17 +283,11 @@ if user_data['rola'] == "Instruktor":
                 except Exception as e:
                     st.error("Nie udało się załadować podglądu wideo. Upewnij się, że link jest poprawny.")
 
-        # ==========================================
-        # SYSTEM GENEROWANIA I ZATWIERDZANIA RAPORTU
-        # ==========================================
         st.divider()
         st.subheader("📝 Podsumowanie i ocena lotu")
         
-        # Przycisk KROK 1: Generowanie brudnopisu
         if st.button(f"🤖 KROK 1: Generuj wstępny raport AI", type="secondary"):
-            if not api_key:
-                st.error("Wklej klucz API w ustawieniach!")
-            elif df is not None and statystyki_lotu != "":
+            if df is not None and statystyki_lotu != "":
                 with st.spinner('AI analizuje parametry lotu i przygotowuje wersję roboczą...'):
                     try:
                         dostepne_modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -318,27 +312,23 @@ if user_data['rola'] == "Instruktor":
                     raport_wideo = f"\n\n**Twój lot:** [Obejrzyj nagranie]({video_url})" if video_url else ""
                     gotowy_raport = f"**Data:** {data_wygenerowania}\n\n**Odprawa Instruktorska:**\n{nowe_zadanie}{raport_wideo}"
                     
-                    # Zapisujemy do pamięci, ale JESZCZE NIE WYSYŁAMY
                     st.session_state.raport_draft = gotowy_raport
-                    st.rerun() # Odświeżamy stronę, by pokazać pole edycji
+                    st.rerun() 
             else:
                 st.warning("Najpierw wgraj prawidłowe dane telemetryczne (z kolumnami rcCommand)!")
 
-        # KROK 2: Jeśli raport jest w pamięci sesji, wyświetl pole do edycji
         if st.session_state.raport_draft is not None:
             st.success("✅ Sztuczna Inteligencja wygenerowała podsumowanie. Możesz je teraz edytować!")
             
-            # Edytor tekstu, do którego można wpisać swoje uwagi
             ostateczny_tekst = st.text_area("Wprowadź swoje poprawki i uwagi przed wysłaniem:", value=st.session_state.raport_draft, height=250)
             
-            # Przycisk wysyłający ostateczną wersję do bazy Supabase
             if st.button("🚀 KROK 2: Zatwierdź i wyślij do Kursanta", type="primary"):
                 with st.spinner("Wysyłanie do bazy chmurowej..."):
                     aktualne_zadania = wybrany_kursant_dane['zadania']
                     aktualne_zadania.append(ostateczny_tekst)
                     supabase.table('konta').update({'zadania': aktualne_zadania}).eq('email', wybrany_email).execute()
                     
-                    st.session_state.raport_draft = None # Czyścimy pamięć brudnopisu po wysłaniu
+                    st.session_state.raport_draft = None 
                     st.success(f"Zadanie zapisane w bazie! Kursant {wybrany_kursant_dane['imie']} zobaczy je po zalogowaniu.")
                     time.sleep(2)
                     st.rerun()
