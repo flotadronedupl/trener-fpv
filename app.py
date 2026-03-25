@@ -216,19 +216,26 @@ if user_data['rola'] == "Instruktor":
                         st.info("🧠 Zebrano dane telemetryczne dla AI (Jerk, Średnie Wychylenia).")
 
                         # ==========================================
-                        # KLASYCZNY WYKRES 2D (SZARPANIE)
+                        # INTELIGENTNE SKALOWANIE DANYCH (Cały lot)
                         # ==========================================
                         st.subheader("📈 Interaktywna Telemetria (2D)")
-                        plot_df = df.head(3000)
                         
+                        # Obliczamy krok, aby wyświetlić maksymalnie ~5000 punktów z całego lotu
+                        krok = max(1, len(df) // 5000)
+                        plot_df = df.iloc[::krok].reset_index(drop=True)
+                        st.success(f"Wyświetlam pełny lot (co {krok}-tą klatkę w celu zachowania płynności).")
+                        
+                        # ==========================================
+                        # KLASYCZNY WYKRES 2D
+                        # ==========================================
                         fig = go.Figure()
                         fig.add_trace(go.Scatter(y=plot_df[thr_col], mode='lines', name='Throttle (Gaz)', line=dict(color='orange', width=2)))
                         fig.add_trace(go.Scatter(y=plot_df[roll_col], mode='lines', name='Roll (Obrót)', line=dict(color='blue', width=1), opacity=0.7))
                         fig.add_trace(go.Scatter(y=plot_df[pitch_col], mode='lines', name='Pitch (Pochylenie)', line=dict(color='green', width=1), opacity=0.7))
                         
                         fig.update_layout(
-                            title="Ruchy drążków w czasie",
-                            xaxis_title="Czas (mikrosekundy / próbki)",
+                            title="Ruchy drążków na przestrzeni CAŁEGO lotu",
+                            xaxis_title="Oś czasu lotu",
                             yaxis_title="Wartość z drążka",
                             template="plotly_dark",
                             hovermode="x unified",
@@ -238,13 +245,13 @@ if user_data['rola'] == "Instruktor":
                         st.plotly_chart(fig, use_container_width=True)
                         
                         # ==========================================
-                        # NOWOŚĆ: IMMERSYJNY TUNEL LOTU (3D)
+                        # IMMERSYJNY TUNEL LOTU (3D)
                         # ==========================================
                         st.markdown("---")
                         st.subheader("🪐 Przestrzenny Tunel Lotu (3D)")
                         st.info("Eksperymentalna symulacja! Oś pionowa to czas lotu, a osie płaskie to Twoje ruchy drążkami. Kolor linii oznacza poziom gazu (niebieski - dół, czerwony - pełny gaz). Obracaj wykres myszką!")
                         
-                        # Matematyka całkowania ruchów drążków
+                        # Matematyka całkowania ruchów drążków na zeskalowanych danych
                         x_3d = plot_df[roll_col].cumsum() / 500  
                         y_3d = plot_df[pitch_col].cumsum() / 500 
                         z_3d = np.arange(len(plot_df)) 
