@@ -19,23 +19,41 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Trener FPV Pro", page_icon="🚁", layout="wide")
 
 # ==========================================
-# KONFIGURACJA API I BEZPIECZNE AI
+# KONFIGURACJA API I INTELIGENTNE AI (AUTO-DISCOVERY)
 # ==========================================
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def get_ai_analysis(prompt):
-    """Bezpieczna funkcja pobierająca odpowiedź z AI z fallbackiem"""
-    # Lista modeli do przetestowania (od najlepszego do najstarszego)
-    model_names = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro']
-    
-    for name in model_names:
-        try:
-            model = genai.GenerativeModel(name)
+    """
+    Automatycznie wykrywa dostępne modele i wybiera najlepszy.
+    Eliminuje błąd 404 (NotFound).
+    """
+    try:
+        # Pobieramy listę wszystkich modeli dostępnych dla Twojego klucza
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Szukamy najlepszego kandydata (Flash 1.5 -> Pro -> cokolwiek)
+        best_model = None
+        for m in available_models:
+            if '1.5-flash' in m:
+                best_model = m
+                break
+        if not best_model:
+            for m in available_models:
+                if 'pro' in m:
+                    best_model = m
+                    break
+        if not best_model and available_models:
+            best_model = available_models[0]
+            
+        if best_model:
+            model = genai.GenerativeModel(best_model)
             response = model.generate_content(prompt)
             return response.text
-        except Exception:
-            continue
-    return '{"ocena": 0, "diagnoza": "Błąd połączenia z AI", "zadanie": "Spróbuj ponownie później"}'
+    except Exception as e:
+        return f'{{"ocena": 0, "diagnoza": "Błąd API: {str(e)}", "zadanie": "Sprawdź połączenie"}}'
+    
+    return '{"ocena": 0, "diagnoza": "Nie znaleziono modeli AI", "zadanie": "Sprawdź klucz API"}'
 
 if 'raport_draft' not in st.session_state:
     st.session_state.raport_draft = None
@@ -63,10 +81,10 @@ def get_decoder_path():
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 # ==========================================
-# SILNIK ANALITYCZNY
+# SILNIK ANALITYCZNY (DASHBOARD)
 # ==========================================
 def render_pro_dashboard(df, show_charts=True):
-    # Dynamiczna detekcja kolumn
+    # Dynamiczna detekcja kolumn (odporna na wersje Betaflight)
     thr = [c for c in df.columns if 'rcCommand[3]' in c or ('rcCommand' in c and '3' in c)][0]
     roll = [c for c in df.columns if 'rcCommand[0]' in c or ('rcCommand' in c and '0' in c)][0]
     pitch = [c for c in df.columns if 'rcCommand[1]' in c or ('rcCommand' in c and '1' in c)][0]
@@ -112,7 +130,7 @@ def render_pro_dashboard(df, show_charts=True):
 # ==========================================
 # GŁÓWNA APLIKACJA
 # ==========================================
-if st.session_state.zalogowany_uzytkownik is None:
+if st.session_state.get('zalogowany_uzytkownik') is None:
     st.title("🚁 Akademia FPV Pro")
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     with t1:
@@ -146,7 +164,7 @@ if user_data['rola'] == "Instruktor":
     k_data = next(k for k in kursanci if k['email'] == wybrany_em)
 
     col_l, col_v = st.columns(2)
-    with col_l: log = st.file_uploader("Log (.bbl/.csv)", type=['bbl', 'csv'])
+    with col_l: log = st.file_uploader("Wgraj log (.bbl/.csv)", type=['bbl', 'csv'])
     with col_v: v_url = st.text_input("Link do wideo:")
     
     df = None
@@ -162,13 +180,13 @@ if user_data['rola'] == "Instruktor":
     if df is not None:
         stats = render_pro_dashboard(df, show_charts=True)
         if st.button("🤖 Generuj Draft Raportu"):
-            prompt = f"Analiza FPV. Roll Jerk: {stats['j_r']:.2f}. Zwróć JSON: {{'ocena': 1-10, 'diagnoza': '...', 'zadanie': '...'}}"
+            prompt = f"Analiza drona FPV. Roll Jerk: {stats['j_r']:.2f}. Zwróć JSON: {{'ocena': 1-10, 'diagnoza': '...', 'zadanie': '...'}}"
             ai_text = get_ai_analysis(prompt)
             try:
                 js = json.loads(ai_text.replace("```json","").replace("```","").strip())
                 st.session_state.raport_draft = f"### Ocena Systemu: {js['ocena']}/10\n\n**🩺 Diagnoza:**\n{js['diagnoza']}\n\n**🏁 Zadanie:**\n{js['zadanie']}"
                 st.session_state.raport_meta = {"ocena": js['ocena'], "j_r": stats['j_r']}
-            except: st.error("AI miało problem z formatem danych. Spróbuj ponownie.")
+            except: st.error(f"AI zwróciło nieoczekiwany format: {ai_text[:100]}")
 
     if st.session_state.raport_draft:
         final = st.text_area("Edytuj raport:", value=st.session_state.raport_draft, height=200)
@@ -196,7 +214,7 @@ else:
     col_t1, col_t2 = st.columns([1, 2])
     with col_t1:
         st.metric("Twoje Tokeny 🎟️", user_data['tokeny'])
-        pakiet = st.radio("Usługa:", ["📄 Basic (1 Token)", "💎 Premium (2 Tokeny)"])
+        pakiet = st.radio("Usługa:", ["📄 Analiza Basic (1 Token)", "💎 Analiza Premium (2 Tokeny)"])
     
     with col_t2:
         u_log = st.file_uploader("Wgraj log .bbl", type=['bbl'])
