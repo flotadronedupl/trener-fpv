@@ -39,7 +39,7 @@ def get_decoder_path():
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_dir)
                 
-            # KOMPILACJA NA ŻYWO NA SERWERZE (Magia Linuxa)
+            # KOMPILACJA NA ŻYWO NA SERWERZE
             source_dir = f"{extract_dir}/blackbox-tools-master"
             subprocess.run(["make", "obj/blackbox_decode"], cwd=source_dir, check=True, capture_output=True)
             
@@ -165,13 +165,16 @@ if user_data['rola'] == "Instruktor":
             uploaded_file = st.file_uploader("Wgraj log z drona (.bbl lub .csv)", type=['bbl', 'csv'])
             
             if uploaded_file:
+                # MAGIA: Zmieniamy nazwę pliku na małe litery, żeby system ignorował duże .BBL
+                nazwa_pliku = uploaded_file.name.lower()
+                
                 # Scenariusz 1: Użytkownik wgrał plik CSV (działa po staremu!)
-                if uploaded_file.name.endswith('.csv'):
+                if nazwa_pliku.endswith('.csv'):
                     st.success("✅ Wgrano gotowy plik CSV. Analizuję...")
                     df = pd.read_csv(uploaded_file)
                     
                 # Scenariusz 2: Użytkownik wgrał surowy plik BBL
-                elif uploaded_file.name.endswith('.bbl'):
+                elif nazwa_pliku.endswith('.bbl'):
                     with st.spinner("Kompilowanie narzędzi i dekodowanie czarnej skrzynki..."):
                         try:
                             decoder_path = get_decoder_path()
@@ -191,7 +194,7 @@ if user_data['rola'] == "Instruktor":
                                     st.success(f"✅ Pomyślnie rozkodowano plik BBL!")
                                     df = pd.read_csv(csv_files[0])
                                 else:
-                                    st.error("Dekoder zadziałał, ale nie wygenerował pliku CSV.")
+                                    st.error("Dekoder zadziałał, ale nie znalazł danych lotu (być może plik jest pusty).")
                             else:
                                 st.error("Nie udało się zbudować dekodera na serwerze.")
                         except Exception as e:
