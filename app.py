@@ -12,36 +12,42 @@ import glob
 
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
 
-# ==========================================
-# AUTO-INSTALATOR DEKODERA BETAFLIGHT (Działa w tle na serwerze)
-# ==========================================
-@st.cache_resource
+
 # ==========================================
 # AUTO-INSTALATOR DEKODERA BETAFLIGHT (Działa w tle na serwerze)
 # ==========================================
 @st.cache_resource
 def get_decoder_path():
+    import os, urllib.request, tarfile, glob, shutil
     url = "https://github.com/betaflight/blackbox-tools/releases/download/v0.4.3/blackbox-tools-0.4.3-linux.tar.gz"
     tar_path = "/tmp/bbt.tar.gz"
     extract_dir = "/tmp/bbt_extracted"
     
+    # Zabezpieczenie: Jeśli katalog istnieje, ale jest pusty/zepsuty, usuwamy go
+    if os.path.exists(extract_dir) and not glob.glob(f"{extract_dir}/**/blackbox_decode", recursive=True):
+        shutil.rmtree(extract_dir)
+        
     if not os.path.exists(extract_dir):
         os.makedirs(extract_dir, exist_ok=True)
         
-        # MAGIA: Przebieramy serwer za normalną przeglądarkę internetową (User-Agent)
-        import urllib.request
+        # Pobieranie z maskowaniem
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
         with urllib.request.urlopen(req) as response, open(tar_path, 'wb') as out_file:
             out_file.write(response.read())
             
+        # Rozpakowywanie
         with tarfile.open(tar_path, "r:gz") as tar:
             tar.extractall(path=extract_dir)
             
+    # Szukamy pliku i nadajemy mu uprawnienia
     executable = glob.glob(f"{extract_dir}/**/blackbox_decode", recursive=True)
     if executable:
         os.chmod(executable[0], 0o755)
         return executable[0]
-    return None
+    else:
+        # To zapobiegnie zapamiętaniu błędu przez Cache!
+        st.cache_resource.clear()
+        raise RuntimeError("Nie udało się znaleźć pliku dekodera po pobraniu.")
     
     # Jeśli serwer jeszcze nie ma dekodera, pobiera go z internetu
     if not os.path.exists(extract_dir):
