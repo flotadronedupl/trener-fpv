@@ -11,6 +11,7 @@ import subprocess
 import glob
 import shutil
 import time
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
 
@@ -28,7 +29,6 @@ def get_decoder_path():
             shutil.rmtree(extract_dir)
         os.makedirs(extract_dir, exist_ok=True)
         
-        # Pobieramy czysty kod źródłowy z GitHuba
         url = "https://github.com/betaflight/blackbox-tools/archive/refs/heads/master.zip"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
         
@@ -39,7 +39,6 @@ def get_decoder_path():
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_dir)
                 
-            # KOMPILACJA NA ŻYWO NA SERWERZE
             source_dir = f"{extract_dir}/blackbox-tools-master"
             subprocess.run(["make", "obj/blackbox_decode"], cwd=source_dir, check=True, capture_output=True)
             
@@ -159,21 +158,18 @@ if user_data['rola'] == "Instruktor":
 
         col1, col2 = st.columns(2)
         df = None
+        statystyki_lotu = "" # Tu zapiszemy wnioski dla AI
 
         with col1:
-            # PANCERNA OBSŁUGA PLIKÓW: BBL oraz CSV
             uploaded_file = st.file_uploader("Wgraj log z drona (.bbl lub .csv)", type=['bbl', 'csv'])
             
             if uploaded_file:
-                # MAGIA: Zmieniamy nazwę pliku na małe litery, żeby system ignorował duże .BBL
                 nazwa_pliku = uploaded_file.name.lower()
                 
-                # Scenariusz 1: Użytkownik wgrał plik CSV (działa po staremu!)
                 if nazwa_pliku.endswith('.csv'):
                     st.success("✅ Wgrano gotowy plik CSV. Analizuję...")
                     df = pd.read_csv(uploaded_file)
                     
-                # Scenariusz 2: Użytkownik wgrał surowy plik BBL
                 elif nazwa_pliku.endswith('.bbl'):
                     with st.spinner("Kompilowanie narzędzi i dekodowanie czarnej skrzynki..."):
                         try:
@@ -199,15 +195,56 @@ if user_data['rola'] == "Instruktor":
                                 st.error("Nie udało się zbudować dekodera na serwerze.")
                         except Exception as e:
                             st.error(f"⚠️ Wystąpił problem z surowym plikiem BBL: {e}")
-                            st.info("Zalecenie: Twój stary sprawdzony sposób działa! Wyeksportuj log jako .csv w Betaflight Blackbox Explorer i wgraj go tutaj.")
+                            st.info("Wyeksportuj log jako .csv w Betaflight Blackbox Explorer i wgraj go tutaj.")
 
-                # Rysowanie wykresu
+                # OBLICZENIA MATEMATYCZNE I INTERAKTYWNY WYKRES
                 if df is not None:
+                    # Szukamy kolumn drążków (Betaflight domyślnie: rcCommand[0]=Roll, [1]=Pitch, [2]=Yaw, [3]=Throttle)
                     rc_cols = [col for col in df.columns if 'rcCommand' in col]
-                    if rc_cols:
-                        st.line_chart(df[rc_cols].head(2000))
+                    
+                    if len(rc_cols) >= 4:
+                        roll_col, pitch_col, yaw_col, thr_col = rc_cols[0], rc_cols[1], rc_cols[2], rc_cols[3]
+                        
+                        # 1. MÓZG: Obliczamy statystyki dla Sztucznej Inteligencji
+                        avg_thr = df[thr_col].mean()
+                        # "Jerk" to szarpanie - sprawdzamy średnią różnicę między kolejnymi ruchami drążka
+                        jerk_thr = df[thr_col].diff().abs().mean()
+                        jerk_roll = df[roll_col].diff().abs().mean()
+                        jerk_pitch = df[pitch_col].diff().abs().mean()
+                        
+                        statystyki_lotu = (
+                            f"- Średnia wartość przepustnicy (Throttle): {avg_thr:.1f}\n"
+                            f"- Wskaźnik szarpania gazem (Jerk): {jerk_thr:.2f} (im wyższy, tym gorsza płynność)\n"
+                            f"- Wskaźnik szarpania osią Roll: {jerk_roll:.2f}\n"
+                            f"- Wskaźnik szarpania osią Pitch: {jerk_pitch:.2f}"
+                        )
+                        st.info("🧠 Zebrano dane telemetryczne dla AI (Jerk, Średnie Wychylenia).")
+
+                        # 2. OCZY: Potężny, interaktywny wykres Plotly
+                        st.subheader("📈 Interaktywna Telemetria")
+                        # Ograniczamy wykres do 3000 wierszy, żeby przeglądarka nie "lagowała"
+                        plot_df = df.head(3000)
+                        
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(y=plot_df[thr_col], mode='lines', name='Throttle (Gaz)', line=dict(color='orange', width=2)))
+                        fig.add_trace(go.Scatter(y=plot_df[roll_col], mode='lines', name='Roll (Obrót)', line=dict(color='blue', width=1), opacity=0.7))
+                        fig.add_trace(go.Scatter(y=plot_df[pitch_col], mode='lines', name='Pitch (Pochylenie)', line=dict(color='green', width=1), opacity=0.7))
+                        
+                        fig.update_layout(
+                            title="Ruchy drążków w czasie",
+                            xaxis_title="Czas (mikrosekundy / próbki)",
+                            yaxis_title="Wartość z drążka",
+                            template="plotly_dark",
+                            hovermode="x unified",
+                            height=400,
+                            margin=dict(l=0, r=0, t=40, b=0)
+                        )
+                        
+                        # Renderujemy wykres
+                        st.plotly_chart(fig, use_container_width=True)
+                        
                     else:
-                        st.info("Brak kolumn RC. Wyświetlam inne dane telemetryczne.")
+                        st.warning("Plik nie zawiera standardowych kolumn 'rcCommand'. Wyświetlam podstawowy wykres.")
                         st.line_chart(df.iloc[:, 1:4].head(2000))
 
         with col2:
@@ -218,15 +255,23 @@ if user_data['rola'] == "Instruktor":
         if st.button(f"🚀 Generuj i wyślij zadanie", type="primary"):
             if not api_key:
                 st.error("Wklej klucz API w ustawieniach!")
-            elif df is not None:
-                with st.spinner('AI analizuje i wysyła do bazy...'):
+            elif df is not None and statystyki_lotu != "":
+                with st.spinner('AI analizuje parametry lotu i wysyła do bazy...'):
                     try:
                         dostepne_modele = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                         wybrany_model = next((m for m in dostepne_modele if 'flash' in m.lower()), dostepne_modele[0])
                         model = genai.GenerativeModel(wybrany_model)
                         
-                        probka_danych = df.head(100).to_string()
-                        prompt = f"Jesteś instruktorem FPV. Oto próbka danych z drona:\n{probka_danych}\nZwróć uwagę na płynność i wymyśl jedno konkretne zadanie poprawkowe dla kursanta. Bądź profesjonalny i zwięzły."
+                        # NOWY, ZAAWANSOWANY PROMPT OPARTY O MATEMATYKĘ
+                        prompt = f"""
+                        Jesteś eksperckim instruktorem drona FPV (Acro mode). 
+                        Przeanalizowałem matematycznie logi z lotu z czarnej skrzynki mojego kursanta. 
+                        Oto precyzyjne wyniki:
+                        {statystyki_lotu}
+                        
+                        Zinterpretuj te dane. Zwróć uwagę na wskaźnik szarpania (Jerk - idealny pilot ma go jak najniższego). 
+                        Napisz dla ucznia krótką, profesjonalną diagnozę (2-3 zdania) i podaj mu 1 konkretne zadanie treningowe na symulator lub na tor, które poprawi jego płynność. Pisz bezpośrednio do ucznia na 'Ty'.
+                        """
                         
                         response = model.generate_content(prompt)
                         nowe_zadanie = response.text
@@ -240,7 +285,7 @@ if user_data['rola'] == "Instruktor":
                     supabase.table('konta').update({'zadania': aktualne_zadania}).eq('email', wybrany_email).execute()
                     st.success(f"Zadanie zapisane w bazie chmurowej! Kursant zobaczy je po zalogowaniu.")
             else:
-                st.warning("Najpierw wgraj dane telemetryczne!")
+                st.warning("Najpierw wgraj prawidłowe dane telemetryczne (z kolumnami rcCommand)!")
 
 # --- WIDOK 2: KURSANT ---
 elif user_data['rola'] == "Kursant":
