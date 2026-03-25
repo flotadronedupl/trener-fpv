@@ -54,10 +54,13 @@ st.markdown("""
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def get_ai_analysis(prompt):
+    """Inteligentne wykrywanie modeli AI dla stabilności"""
     try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        best = next((m for m in models if '1.5-flash' in m), models[0])
-        model = genai.GenerativeModel(best)
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        best_model = next((m for m in available_models if '1.5-flash' in m), None)
+        if not best_model:
+            best_model = next((m for m in available_models if 'pro' in m), available_models[0])
+        model = genai.GenerativeModel(best_model)
         return model.generate_content(prompt).text
     except Exception as e:
         return f'{{"ocena": 0, "diagnoza": "AI Offline: {str(e)}", "zadanie": "Spróbuj później"}}'
@@ -84,7 +87,7 @@ def render_pro_dashboard(df, mode="drone", show_charts=True):
         roll = [c for c in df.columns if 'rcCommand[0]' in c or ('rcCommand' in c and '0' in c)][0]
         pitch = [c for c in df.columns if 'rcCommand[1]' in c or ('rcCommand' in c and '1' in c)][0]
     except:
-        st.error("Błąd kolumn telemetrii.")
+        st.error("Błąd kolumn telemetrii. Upewnij się, że log zawiera dane rcCommand.")
         return None
 
     jr, jp = df[roll].diff().abs().mean(), df[pitch].diff().abs().mean()
@@ -102,12 +105,12 @@ def render_pro_dashboard(df, mode="drone", show_charts=True):
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color='#ff9900')))
             fig.add_trace(go.Scatter(y=pdf[roll], name="Roll", opacity=0.4, line=dict(color='#00ffcc')))
-            fig.update_layout(template="plotly_dark", height=350)
+            fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=20,b=0))
             st.plotly_chart(fig, use_container_width=True)
         with t2:
             fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
                              mode='lines', line=dict(color=pdf[thr], colorscale='Jet', width=5))])
-            fig3.update_layout(template="plotly_dark", height=500)
+            fig3.update_layout(template="plotly_dark", height=500, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig3, use_container_width=True)
         with t3:
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
@@ -121,11 +124,13 @@ def render_pro_dashboard(df, mode="drone", show_charts=True):
     return {"jr": jr, "jp": jp}
 
 # ==========================================
-# 4. SESSION & AUTH
+# 4. INITIALIZATION & AUTH
 # ==========================================
+# Inicjalizacja sesji (Zapobieganie KeyError)
 if 'zalogowany_uzytkownik' not in st.session_state: st.session_state.zalogowany_uzytkownik = None
 if 'app_mode' not in st.session_state: st.session_state.app_mode = "menu"
 if 'draft' not in st.session_state: st.session_state.draft = None
+if 'temp_jr' not in st.session_state: st.session_state.temp_jr = 0
 
 if st.session_state.zalogowany_uzytkownik is None:
     st.title("🚁 FPV ACADEMY PRO")
@@ -140,10 +145,11 @@ if st.session_state.zalogowany_uzytkownik is None:
                 st.rerun()
     st.stop()
 
+# Pobranie danych zalogowanego
 user_data = supabase.table('konta').select('*').eq('email', st.session_state.zalogowany_uzytkownik).execute().data[0]
 
 # ==========================================
-# 5. INSTRUKTOR VIEW
+# 5. INSTRUKTOR VIEW (Pełna edycja i wysyłka)
 # ==========================================
 if user_data['rola'] == "Instruktor":
     st.title("👨‍🏫 Master Instructor Dashboard")
@@ -159,8 +165,9 @@ if user_data['rola'] == "Instruktor":
 
     with st.expander("📜 Ostatnie zadania tego kursanta"):
         for z in reversed(k_data['zadania'][-3:]):
-            st.write(f"**{z.get('data')} | Ocena: {z.get('ocena')}/10**")
-            st.caption(z.get('raport')[:100] + "...")
+            if isinstance(z, dict):
+                st.write(f"**{z.get('data')} | Ocena: {z.get('ocena')}/10**")
+                st.caption(z.get('raport')[:100] + "...")
             st.divider()
 
     col_l, col_v = st.columns(2)
@@ -171,7 +178,7 @@ if user_data['rola'] == "Instruktor":
     if log:
         if log.name.endswith('.csv'): df_active = pd.read_csv(log)
         else:
-            with st.spinner("Dekodowanie..."):
+            with st.spinner("Dekodowanie czarnej skrzynki..."):
                 dec = get_decoder()
                 with open("/tmp/i.bbl", "wb") as f: f.write(log.getbuffer())
                 subprocess.run([dec, "/tmp/i.bbl"])
@@ -181,26 +188,42 @@ if user_data['rola'] == "Instruktor":
     if df_active is not None:
         stats = render_pro_dashboard(df_active)
         if st.button("🤖 GENERUJ PROPOZYCJĘ AI"):
-            p = f"Instruktor FPV ocenia lot. Roll Jerk: {stats['jr']:.2f}. Zwróć JSON: {{'ocena': 1-10, 'diagnoza': '...', 'zadanie': '...'}}"
+            p = f"Jako instruktor FPV oceń lot. Roll Jerk: {stats['jr']:.2f}. Zwróć JSON: {{'ocena': 1-10, 'diagnoza': '...', 'zadanie': '...'}}"
             raw = get_ai_analysis(p)
             try:
                 js = json.loads(raw.replace("```json","").replace("```","").strip())
                 st.session_state.draft = f"### Ocena Systemu: {js['ocena']}/10\n\n**Odprawa Instruktorska:**\n{js['diagnoza']}\n\n**Zadanie:**\n{js['zadanie']}"
                 st.session_state.temp_jr = stats['jr']
-            except: st.error("AI błąd formatowania.")
+            except: st.error("AI błąd formatowania. Spróbuj jeszcze raz.")
 
-    if st.session_state.draft:
+    # Bezpieczne wyświetlanie edytora raportu
+    if st.session_state.get('draft'):
+        st.divider()
         st.subheader("📝 Edytuj raport przed wysłaniem")
         final_rep = st.text_area("Możesz zmienić treść lub ocenę ręcznie:", value=st.session_state.draft, height=250)
+        
         if st.button("🚀 ZATWIERDŹ I WYŚLIJ DO KURSANTA", type="primary"):
-            score = int(re.search(r"Ocena Systemu: (\d+)/10", final_rep).group(1)) if "Ocena Systemu" in final_rep else 5
-            nowy = {"data": datetime.now().strftime("%Y-%m-%d %H:%M"), "ocena": score, "raport": final_rep, "wideo": v_url, "jerk": st.session_state.get('temp_jr',0), "premium": True}
-            zads = k_data['zadania']
-            zads.append(nowy)
-            supabase.table('konta').update({"zadania": zads}).eq('email', wybrany_em).execute()
+            # Wyciąganie oceny z tekstu edytora
+            match = re.search(r"Ocena Systemu: (\d+)/10", final_rep)
+            score = int(match.group(1)) if match else 5
+            
+            nowy = {
+                "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "ocena": score,
+                "raport": final_rep,
+                "wideo": v_url,
+                "jerk": st.session_state.get('temp_jr', 0),
+                "premium": True
+            }
+            
+            aktualne = k_data['zadania']
+            aktualne.append(nowy)
+            supabase.table('konta').update({"zadania": aktualne}).eq('email', wybrany_em).execute()
+            
             st.session_state.draft = None
-            st.success("Raport wysłany pomyślnie!")
-            time.sleep(1); st.rerun()
+            st.success(f"Raport wysłany do kursanta {k_data['imie']}!")
+            time.sleep(1)
+            st.rerun()
 
 # ==========================================
 # 6. KURSANT VIEW (LAUNCHPAD)
@@ -211,54 +234,73 @@ else:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown('<div class="launch-card"><h2>🚁 REAL FLIGHT</h2><p>Analiza czarnej skrzynki. Bateria i tunel 3D.</p></div>', unsafe_allow_html=True)
-            if st.button("ANALIZA LOGÓW DRONA"): st.session_state.app_mode = "drone"; st.rerun()
+            if st.button("ANALIZA LOGÓW DRONA", use_container_width=True): st.session_state.app_mode = "drone"; st.rerun()
         with c2:
             st.markdown('<div class="launch-card"><h2>🎮 SIMULATOR</h2><p>Trening płynności z Liftoff/Velocidrone.</p></div>', unsafe_allow_html=True)
-            if st.button("ANALIZA TRENINGU SIM"): st.session_state.app_mode = "sim"; st.rerun()
+            if st.button("ANALIZA TRENINGU SIM", use_container_width=True): st.session_state.app_mode = "sim"; st.rerun()
             
         st.divider()
         st.subheader("📈 Twoja Krzywa Rozwoju")
         zads = user_data.get('zadania', [])
         if len(zads) > 1:
             oceny = [z['ocena'] for z in zads if isinstance(z, dict) and 'ocena' in z]
-            st.plotly_chart(go.Figure(go.Scatter(y=oceny, mode='lines+markers', line=dict(color='#00ffcc', width=3))).update_layout(template="plotly_dark", height=250), use_container_width=True)
+            st.plotly_chart(go.Figure(go.Scatter(y=oceny, mode='lines+markers', line=dict(color='#00ffcc', width=3))).update_layout(template="plotly_dark", height=250, margin=dict(l=0,r=0,t=0,b=0)), use_container_width=True)
 
     else:
-        st.header("📤 Nowy Log do analizy")
-        if st.button("⬅️ Powrót"): st.session_state.app_mode = "menu"; st.rerun()
+        st.header(f"📤 Nowa Analiza: {'Dron' if st.session_state.app_mode == 'drone' else 'Symulator'}")
+        if st.button("⬅️ Powrót do menu"): st.session_state.app_mode = "menu"; st.rerun()
         
-        with st.popover("❓ Instrukcja"):
-            st.write("Wgraj plik .bbl z drona lub .csv z symulatora.")
+        with st.popover("❓ Pomoc"):
+            st.write("Wgraj plik .bbl lub .csv, aby otrzymać natychmiastową informację zwrotną.")
 
         col_t1, col_t2 = st.columns([1, 2])
         with col_t1:
-            st.metric("Tokeny 🎟️", user_data['tokeny'])
-            pakiet = st.radio("Wybierz:", ["📄 Basic (1 Token)", "💎 Premium (2 Tokeny)"])
+            st.metric("Twoje Tokeny 🎟️", user_data['tokeny'])
+            pakiet = st.radio("Usługa:", ["📄 Basic (1 Token)", "💎 Premium (2 Tokeny)"])
             koszt = 1 if "Basic" in pakiet else 2
+            
         with col_t2:
             u_log = st.file_uploader("Wgraj plik", type=['bbl', 'csv'])
-            if u_log and st.button(f"Start {pakiet}"):
+            if u_log and st.button(f"Zatwierdź analizę ({koszt} Tokeny)"):
                 if user_data['tokeny'] >= koszt:
-                    with st.spinner("AI pracuje..."):
-                        # Dekodowanie i analiza (skrócona logika dla kursanta)
+                    with st.spinner("AI przetwarza Twój lot..."):
                         dec = get_decoder()
                         with open("/tmp/u.bbl", "wb") as f: f.write(u_log.getbuffer())
                         subprocess.run([dec, "/tmp/u.bbl"])
                         csvs = sorted(glob.glob("/tmp/u*.csv"))
                         if csvs:
                             df = pd.read_csv(csvs[0])
-                            if koszt == 2: render_pro_dashboard(df, mode=st.session_state.app_mode)
-                            raw_ai = get_ai_analysis("Analiza FPV. Podaj JSON z oceną 1-10 i diagnozą.")
-                            js = json.loads(raw_ai.replace("```json","").replace("```","").strip())
-                            txt = f"### {pakiet} RAPORT\n\n**Ocena:** {js['ocena']}/10\n\n{js['diagnoza']}"
-                            user_data['zadania'].append({"data": datetime.now().strftime("%Y-%m-%d"), "ocena": js['ocena'], "raport": txt, "premium": (koszt==2)})
-                            supabase.table('konta').update({"zadania": user_data['zadania'], "tokeny": user_data['tokeny']-koszt}).eq('email', user_data['email']).execute()
-                            st.rerun()
+                            # Pokazujemy dashboard tylko w premium
+                            stats = render_pro_dashboard(df, mode=st.session_state.app_mode, show_charts=(koszt == 2))
+                            
+                            raw_ai = get_ai_analysis(f"Analiza FPV. Jerk: {stats['jr']:.2f}. Podaj JSON z oceną 1-10 i diagnozą.")
+                            try:
+                                js = json.loads(raw_ai.replace("```json","").replace("```","").strip())
+                                txt = f"### {pakiet} RAPORT\n\n**Ocena:** {js['ocena']}/10\n\n{js['diagnoza']}\n\n**Zadanie:** {js['zadanie']}"
+                                
+                                user_data['zadania'].append({
+                                    "data": datetime.now().strftime("%Y-%m-%d"),
+                                    "ocena": js['ocena'],
+                                    "raport": txt,
+                                    "premium": (koszt==2),
+                                    "jerk": stats['jr']
+                                })
+                                
+                                supabase.table('konta').update({
+                                    "zadania": user_data['zadania'], 
+                                    "tokeny": user_data['tokeny'] - koszt
+                                }).eq('email', user_data['email']).execute()
+                                
+                                st.balloons()
+                                time.sleep(1)
+                                st.rerun()
+                            except: st.error("AI błąd formatowania.")
                 else: st.error("Brak tokenów!")
 
-    st.subheader("📋 Twoja Historia")
+    st.subheader("📋 Historia Twoich Analiz")
     for z in reversed(user_data.get('zadania', [])):
         if isinstance(z, dict):
-            with st.expander(f"{z.get('data')} | Ocena: {z.get('ocena')}/10"):
+            tag = "💎" if z.get('premium') else "📄"
+            with st.expander(f"{tag} Analiza {z.get('data')} | Ocena: {z.get('ocena')}/10"):
                 st.markdown(z.get('raport'))
                 if z.get('wideo'): st.video(z.get('wideo'))
