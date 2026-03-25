@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Trener FPV", page_icon="🚁", layout="wide")
 
 # ==========================================
-# AUTO-INSTALATOR DEKODERA BETAFLIGHT (Działa w tle na serwerze)
+# AUTO-INSTALATOR DEKODERA BETAFLIGHT
 # ==========================================
 @st.cache_resource
 def get_decoder_path():
@@ -215,7 +215,10 @@ if user_data['rola'] == "Instruktor":
                         )
                         st.info("🧠 Zebrano dane telemetryczne dla AI (Jerk, Średnie Wychylenia).")
 
-                        st.subheader("📈 Interaktywna Telemetria")
+                        # ==========================================
+                        # KLASYCZNY WYKRES 2D (SZARPANIE)
+                        # ==========================================
+                        st.subheader("📈 Interaktywna Telemetria (2D)")
                         plot_df = df.head(3000)
                         
                         fig = go.Figure()
@@ -229,17 +232,59 @@ if user_data['rola'] == "Instruktor":
                             yaxis_title="Wartość z drążka",
                             template="plotly_dark",
                             hovermode="x unified",
-                            height=400,
+                            height=350,
                             margin=dict(l=0, r=0, t=40, b=0)
                         )
                         st.plotly_chart(fig, use_container_width=True)
                         
+                        # ==========================================
+                        # NOWOŚĆ: IMMERSYJNY TUNEL LOTU (3D)
+                        # ==========================================
+                        st.markdown("---")
+                        st.subheader("🪐 Przestrzenny Tunel Lotu (3D)")
+                        st.info("Eksperymentalna symulacja! Oś pionowa to czas lotu, a osie płaskie to Twoje ruchy drążkami. Kolor linii oznacza poziom gazu (niebieski - dół, czerwony - pełny gaz). Obracaj wykres myszką!")
+                        
+                        # Matematyka całkowania ruchów drążków
+                        x_3d = plot_df[roll_col].cumsum() / 500  
+                        y_3d = plot_df[pitch_col].cumsum() / 500 
+                        z_3d = np.arange(len(plot_df)) 
+                        kolor_gazu = plot_df[thr_col] 
+                        
+                        fig3d = go.Figure(data=[go.Scatter3d(
+                            x=x_3d,
+                            y=y_3d,
+                            z=z_3d,
+                            mode='lines',
+                            line=dict(
+                                color=kolor_gazu,
+                                colorscale='Jet', 
+                                width=5
+                            )
+                        )])
+                        
+                        fig3d.update_layout(
+                            template="plotly_dark",
+                            margin=dict(l=0, r=0, b=0, t=10),
+                            scene=dict(
+                                xaxis_title='Wychylenie Roll',
+                                yaxis_title='Wychylenie Pitch',
+                                zaxis_title='Czas Lotu (Postęp)',
+                                camera=dict(
+                                    up=dict(x=0, y=0, z=1),
+                                    center=dict(x=0, y=0, z=0),
+                                    eye=dict(x=1.5, y=1.5, z=1.5)
+                                )
+                            ),
+                            height=450
+                        )
+                        st.plotly_chart(fig3d, use_container_width=True)
+
                     else:
                         st.warning("Plik nie zawiera standardowych kolumn 'rcCommand'. Wyświetlam podstawowy wykres.")
                         st.line_chart(df.iloc[:, 1:4].head(2000))
 
         # ==========================================
-        # NOWY MODUŁ WIDEO (CHMURA / LINKI)
+        # MODUŁ WIDEO (CHMURA / LINKI)
         # ==========================================
         with col2:
             st.markdown("### 🎥 Wideo z lotu")
@@ -249,14 +294,11 @@ if user_data['rola'] == "Instruktor":
             if video_url:
                 try:
                     if "drive.google.com" in video_url:
-                        # Przerabiamy link Dysku Google na odtwarzacz
                         embed_url = video_url.replace('/view', '/preview').split('?')[0]
                         st.components.v1.iframe(embed_url, height=400)
                     elif "youtube.com" in video_url or "youtu.be" in video_url:
-                        # Youtube natywnie przez Streamlit
                         st.video(video_url)
                     else:
-                        # Inne linki (np. Dropbox)
                         st.markdown(f"👉 [Kliknij tutaj, aby otworzyć wideo w nowej karcie]({video_url})")
                 except Exception as e:
                     st.error("Nie udało się załadować podglądu wideo. Upewnij się, że link jest poprawny.")
@@ -287,7 +329,6 @@ if user_data['rola'] == "Instruktor":
                         nowe_zadanie = f"Błąd AI: {e}. Awaryjne zadanie: Skup się na płynnym przechodzeniu przez bramki."
 
                     data_wygenerowania = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    # Dodajemy link do wideo w raporcie dla Kursanta (jeśli został podany!)
                     raport_wideo = f"\n\n**Twój lot:** [Obejrzyj nagranie]({video_url})" if video_url else ""
                     gotowy_raport = f"**Data:** {data_wygenerowania}\n\n{nowe_zadanie}{raport_wideo}"
                     
