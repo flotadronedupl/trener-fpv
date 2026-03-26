@@ -15,6 +15,7 @@ import json
 import re
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import plotly.express as px
 
 # ==========================================
 # 1. KONFIGURACJA SESJI
@@ -37,19 +38,16 @@ init_session()
 # ==========================================
 accent = st.session_state.theme_color
 
-# Dodajemy nowoczesne efekty wizualne
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     
-    /* Globalne Tło - bardzo ciemny, głęboki granat z subtelnym gradientem */
     .stApp {{ 
         background: radial-gradient(circle at top, #111827, #030712); 
         color: #F8FAFC; 
         font-family: 'Inter', sans-serif; 
     }}
     
-    /* Eleganckie karty z efektem Glassmorphism (szkła) */
     .bento-card {{
         background: rgba(30, 41, 59, 0.4); 
         backdrop-filter: blur(12px);
@@ -65,81 +63,42 @@ st.markdown(f"""
         transform: translateY(-4px); 
     }}
     
-    /* Typografia i nagłówki z gradientem */
     h1, h2, h3, h4 {{ font-weight: 800 !important; color: #FFFFFF !important; letter-spacing: -0.5px; }}
-    .mono-text {{ 
-        font-family: 'Inter', sans-serif; 
-        color: #94A3B8; 
-        font-size: 0.8rem; 
-        text-transform: uppercase; 
-        font-weight: 700; 
-        letter-spacing: 0.1em; 
-    }}
+    .mono-text {{ font-family: 'Inter', sans-serif; color: #94A3B8; font-size: 0.8rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.1em; }}
     
-    /* Nowoczesne Metryki */
     div[data-testid="stMetric"] {{
-        background: rgba(30, 41, 59, 0.4); 
-        border: 1px solid rgba(255, 255, 255, 0.05); 
-        border-radius: 16px; 
-        padding: 24px;
+        background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 16px; padding: 24px;
         box-shadow: inset 0 2px 4px 0 rgba(255, 255, 255, 0.02);
     }}
     div[data-testid="stMetricValue"] {{ font-weight: 800; color: {accent}; font-size: 2.2rem; }}
     
-    /* Standardowe Przyciski */
     .stButton>button {{
-        background: rgba(30, 41, 59, 0.6); 
-        border: 1px solid rgba(255,255,255,0.1); 
-        color: #E2E8F0; 
-        border-radius: 12px;
-        font-weight: 600; 
-        padding: 0.5rem 1rem;
-        transition: all 0.3s ease;
+        background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255,255,255,0.1); color: #E2E8F0; border-radius: 12px; font-weight: 600; padding: 0.5rem 1rem; transition: all 0.3s ease;
     }}
-    .stButton>button:hover {{ 
-        background: rgba(255,255,255,0.1); 
-        color: #FFFFFF; 
-        border-color: {accent}; 
-    }}
+    .stButton>button:hover {{ background: rgba(255,255,255,0.1); color: #FFFFFF; border-color: {accent}; }}
     
-    /* Główny przycisk akcji (Glow effect) */
     .cta-btn>button {{ 
-        background: linear-gradient(135deg, {accent}, #6366F1); 
-        color: #FFFFFF; 
-        border: none; 
-        font-weight: 700; 
-        letter-spacing: 0.5px;
-        box-shadow: 0 4px 20px 0 {accent}60; 
-        border-radius: 12px;
-        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, {accent}, #6366F1); color: #FFFFFF; border: none; font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 4px 20px 0 {accent}60; border-radius: 12px; padding: 0.75rem 1.5rem;
     }}
-    .cta-btn>button:hover {{ 
-        box-shadow: 0 8px 30px rgba(99, 102, 241, 0.6); 
-        transform: scale(1.02);
-    }}
+    .cta-btn>button:hover {{ box-shadow: 0 8px 30px rgba(99, 102, 241, 0.6); transform: scale(1.02); }}
     
-    /* Pola wprowadzania danych */
     .stTextInput input, .stTextArea textarea, .stNumberInput input {{ 
-        background: rgba(15, 23, 42, 0.6) !important; 
-        border: 1px solid rgba(255,255,255,0.1) !important; 
-        color: #F8FAFC !important; 
-        border-radius: 12px !important; 
-        padding: 10px 15px !important;
+        background: rgba(15, 23, 42, 0.6) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: #F8FAFC !important; border-radius: 12px !important; padding: 10px 15px !important;
     }}
-    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {{ 
-        border-color: {accent} !important; 
-        box-shadow: 0 0 0 2px {accent}40 !important; 
-    }}
+    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {{ border-color: {accent} !important; box-shadow: 0 0 0 2px {accent}40 !important; }}
     
-    /* Panele, menu i ukrycie brandingu Streamlit */
     section[data-testid="stSidebar"] {{ background-color: rgba(3, 7, 18, 0.8) !important; border-right: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(10px); }}
     #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
+
+    /* BEZPIECZNE KLASY DLA LOGO (Rozwiązanie błędu wyświetlania) */
+    .logo-container {{ text-align: center; padding-bottom: 3rem; display: flex; flex-direction: column; align-items: center; }}
+    .logo-title {{ font-size: 3rem; margin-bottom: 0; margin-top: 10px; background: linear-gradient(90deg, #FFFFFF, #94A3B8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+    .logo-subtitle {{ color: #64748B; font-size: 1.1rem; margin-top: 0.5rem; font-weight: 500; letter-spacing: 1px; }}
     </style>
     """, unsafe_allow_html=True)
 
-# NOWE WŁASNE LOGO WEKTOROWE
+# NOWE LOGO BEZ BŁĘDÓW PARSOWANIA
 def render_logo():
-    # Profesjonalne wektorowe logo drona w formacie SVG
     svg_logo = f"""
     <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01" stroke="{accent}" stroke-width="3" stroke-linecap="round"/>
@@ -148,12 +107,10 @@ def render_logo():
     </svg>
     """
     st.markdown(f"""
-        <div style='text-align: center; padding-bottom: 3rem; display: flex; flex-direction: column; align-items: center;'>
+        <div class="logo-container">
             {svg_logo}
-            <h1 style='font-size: 3rem; margin-bottom: 0; margin-top: 10px; background: linear-gradient(90deg, #FFFFFF, #94A3B8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
-                FPV AI Academy
-            </h1>
-            <p style='color: #64748B; font-size: 1.1rem; margin-top: 0.5rem; font-weight: 500; letter-spacing: 1px;'>NEXT-GEN FLIGHT ANALYTICS</p>
+            <h1 class="logo-title">FPV AI Academy</h1>
+            <p class="logo-subtitle">NEXT-GEN FLIGHT ANALYTICS</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -174,7 +131,7 @@ def generate_intel(prompt):
         best = next((m for m in models if '1.5-flash' in m), models[0])
         return genai.GenerativeModel(best).generate_content(prompt).text
     except Exception as e:
-        return f'{{"ocena": 0, "diagnoza": "Przepraszamy, wystąpił błąd komunikacji z AI. Instruktor musi dodać komentarz ręcznie.", "zadanie": "Brak zadań - błąd systemu."}}'
+        return f'{{"ocena": 0, "diagnoza": "Przepraszamy, wystąpił błąd komunikacji z AI.", "zadanie": "Brak zadań."}}'
 
 @st.cache_resource(show_spinner=False)
 def get_decoder():
@@ -189,7 +146,7 @@ def get_decoder():
     return path
 
 # ==========================================
-# 4. SILNIK WIZUALIZACJI DANYCH
+# 4. SILNIK WIZUALIZACJI DANYCH (ROZBUDOWANY!)
 # ==========================================
 def render_terminal_hud(df, mode="Real", premium=False):
     color = st.session_state.theme_color
@@ -197,52 +154,77 @@ def render_terminal_hud(df, mode="Real", premium=False):
         thr = [c for c in df.columns if 'rcCommand[3]' in c or ('rcCommand' in c and '3' in c)][0]
         roll = [c for c in df.columns if 'rcCommand[0]' in c or ('rcCommand' in c and '0' in c)][0]
         pitch = [c for c in df.columns if 'rcCommand[1]' in c or ('rcCommand' in c and '1' in c)][0]
+        # Próba znalezienia osi Yaw
+        yaw_cols = [c for c in df.columns if 'rcCommand[2]' in c or ('rcCommand' in c and '2' in c)]
+        yaw = yaw_cols[0] if yaw_cols else None
     except:
-        st.error("Wystąpił problem: Nie znaleziono danych o wychyleniach drążków w tym pliku.")
+        st.error("Wystąpił problem: Nie znaleziono podstawowych danych o wychyleniach drążków w tym pliku.")
         return None
 
+    # Obliczenia metryk
     jr, jp = df[roll].diff().abs().mean(), df[pitch].diff().abs().mean()
+    jy = df[yaw].diff().abs().mean() if yaw else 0
     avg_t = df[thr].mean()
-    smoothness = max(0, 10 - (jr + jp))
+    max_t = df[thr].max()
+    
+    # Skalowanie płynności i zdrowia
+    smoothness = max(0, 10 - ((jr + jp + jy) * 0.8))
     health = max(0, min(100, 100 - ((jr + jp) * 12)))
     
     st.markdown("<p class='mono-text'>KLUCZOWE WSKAŹNIKI LOTU</p>", unsafe_allow_html=True)
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Średni Gaz", f"{avg_t:.0f}")
-    m2.metric("Płynność Lotu", f"{smoothness:.1f} / 10")
-    m3.metric("Kondycja Sprzętu", f"{health:.0f}%")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Płynność Drążków", f"{smoothness:.1f} / 10")
+    m2.metric("Średni Gaz", f"{avg_t:.0f}")
+    m3.metric("Max Gaz", f"{max_t:.0f}")
+    m4.metric("Kondycja Drona", f"{health:.0f}%")
 
     if premium:
-        st.markdown("<br><p class='mono-text'>ZAAWANSOWANA ANALIZA</p>", unsafe_allow_html=True)
-        t1, t2, t3 = st.tabs(["Wykres Drążków", "Trajektoria 3D", "Zużycie Baterii"])
+        st.markdown("<br><p class='mono-text'>INTERAKTYWNE ŚRODOWISKO ANALITYCZNE</p>", unsafe_allow_html=True)
+        t1, t2, t3, t4 = st.tabs(["Wykres Liniowy", "Mapa Sticków 2D", "Trajektoria 3D", "Silniki & Bateria"])
         
-        pdf = df.iloc[::max(1, len(df)//5000)]
+        pdf = df.iloc[::max(1, len(df)//5000)] # Downsampling dla wydajności przeglądarki
         
         with t1:
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color='#64748B', width=1)))
             fig.add_trace(go.Scatter(y=pdf[roll], name="Roll", line=dict(color=color, width=2)))
-            fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            if yaw: fig.add_trace(go.Scatter(y=pdf[yaw], name="Yaw", line=dict(color='#F59E0B', width=1, dash='dot')))
+            fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=10,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
             
         with t2:
+            st.markdown("<p style='font-size: 0.9em; color: #94A3B8;'>Mapa Cieplna Prawego Drążka (Roll vs Pitch). Jasne punkty to miejsca, w których drążek przebywał najdłużej.</p>", unsafe_allow_html=True)
+            fig2 = px.density_heatmap(pdf, x=roll, y=pitch, nbinsx=50, nbinsy=50, color_continuous_scale="Viridis")
+            fig2.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=10,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Roll (Obrót w lewo/prawo)", yaxis_title="Pitch (Przód/Tył)")
+            st.plotly_chart(fig2, use_container_width=True)
+            
+        with t3:
             fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
                                 mode='lines', line=dict(color=pdf[thr], colorscale='Blues', width=5))])
             fig3.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', scene=dict(bgcolor='rgba(15, 23, 42, 0)'))
             st.plotly_chart(fig3, use_container_width=True)
             
-        with t3:
+        with t4:
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
+            mot_cols = [c for c in df.columns if 'motor[' in c.lower() or 'motor0' in c.lower()]
+            
+            if mot_cols and len(mot_cols) >= 4:
+                st.markdown("<p style='font-size: 0.9em; color: #94A3B8;'>Średnie obciążenie silników (wartości surowe). Znaczne różnice mogą sugerować uszkodzenie mechaniczne.</p>", unsafe_allow_html=True)
+                mot_avgs = [df[m].mean() for m in mot_cols[:4]]
+                fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=color)])
+                fig_mot.update_layout(template="plotly_dark", height=200, margin=dict(l=0,r=0,t=10,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_mot, use_container_width=True)
+            
             if v_col and mode == "Real":
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC')), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", fill='tozeroy', opacity=0.1, line=dict(color=color)), secondary_y=True)
-                f_bat.update_layout(template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=0,b=0))
+                f_bat.update_layout(template="plotly_dark", height=250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=10,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
             else:
-                st.info("Brak danych o baterii w przypadku symulatora.")
+                if not mot_cols: st.info("Brak szczegółowych danych o silnikach i baterii w tym logu.")
             
-    return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t)}
+    return {"jr": float(jr), "jp": float(jp), "jy": float(jy), "health": float(health), "avg_t": float(avg_t), "max_t": float(max_t)}
 
 # ==========================================
 # 5. EKRAN LOGOWANIA
@@ -280,10 +262,11 @@ user_data = supabase.table('konta').select('*').eq('email', st.session_state.aut
 
 def render_history_stats(stats_dict):
     st.markdown("<p class='mono-text' style='margin-top: 15px;'>ZAPISANE PARAMETRY LOTU</p>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Kondycja drona", f"{stats_dict.get('health', 0):.0f}%")
-    c2.metric("Szarpnięcia Roll", f"{stats_dict.get('jr', 0):.2f}")
-    c3.metric("Szarpnięcia Pitch", f"{stats_dict.get('jp', 0):.2f}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Kondycja", f"{stats_dict.get('health', 0):.0f}%")
+    c2.metric("Roll Jerk", f"{stats_dict.get('jr', 0):.2f}")
+    c3.metric("Pitch Jerk", f"{stats_dict.get('jp', 0):.2f}")
+    c4.metric("Yaw Jerk", f"{stats_dict.get('jy', 0):.2f}")
 
 # ==========================================
 # 6. PANEL INSTRUKTORA
@@ -318,7 +301,7 @@ if user_data['rola'] == "Instruktor":
         inst_ind = "Standard"
         if inst_env == "Lot Rzeczywisty":
             inst_ind = st.selectbox("Styl Lotu", ["Cinematic / Płynny", "Racing (Wyścigi)", "Freestyle"])
-        inst_skill = st.selectbox("Zaawansowanie Kursanta", ["Początkujący", "Średniozaawansowany", "Ekspert"])
+        inst_skill = st.selectbox("Zaawansowanie", ["Początkujący", "Średniozaawansowany", "Ekspert"])
         
         st.session_state.theme_color = '#10B981' if 'Cinematic' in inst_ind else '#F59E0B' if 'Racing' in inst_ind else '#3B82F6'
         
@@ -330,22 +313,21 @@ if user_data['rola'] == "Instruktor":
         st.markdown(f"<h2>Profil: {target_data['imie']}</h2>", unsafe_allow_html=True)
         
         c_upl, c_vid = st.columns(2)
-        with c_upl: log_file = st.file_uploader("Wgraj Plik Telemetrii (BBL/CSV)", type=['bbl', 'csv'], label_visibility="collapsed")
-        with c_vid: vid_link = st.text_input("Link do wideo (YouTube/Drive)", placeholder="https://...")
+        with c_upl: log_file = st.file_uploader("Wgraj Plik Telemetrii", type=['bbl', 'csv'], label_visibility="collapsed")
+        with c_vid: vid_link = st.text_input("Link do wideo", placeholder="https://...")
 
         df_active = None
         if log_file:
-            with st.status("Przetwarzanie danych lotu...", expanded=False) as status:
+            with st.status("Przetwarzanie danych...", expanded=False) as status:
                 if log_file.name.endswith('.csv'): 
                     df_active = pd.read_csv(log_file)
                 else:
-                    st.write("Dekodowanie czarnej skrzynki...")
                     dec = get_decoder()
                     with open("/tmp/i.bbl", "wb") as f: f.write(log_file.getbuffer())
                     subprocess.run([dec, "/tmp/i.bbl"], stdout=subprocess.DEVNULL)
                     csvs = sorted(glob.glob("/tmp/i*.csv"))
                     if csvs: df_active = pd.read_csv(csvs[0])
-                status.update(label="Dane załadowane pomyślnie", state="complete", expanded=False)
+                status.update(label="Dane załadowane", state="complete", expanded=False)
 
         if df_active is not None:
             stats = render_terminal_hud(df_active, mode="Real" if inst_env=="Lot Rzeczywisty" else "Sim", premium=True)
@@ -353,39 +335,35 @@ if user_data['rola'] == "Instruktor":
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("GENERUJ OPINIĘ AI"):
                 if init_ai():
-                    # ZAAWANSOWANY PROMPT INSTRUKTORSKI
                     prompt = f"""
-                    Jesteś elitarnym, empatycznym instruktorem dronów FPV. Analizujesz lot kursanta.
-                    Poziom umiejętności: {inst_skill}. Styl lotu: {inst_ind}.
-                    
-                    ZASADY KOMUNIKACJI WEDŁUG POZIOMU:
-                    - Początkujący: Skup się na podstawach, trzymaniu wysokości, płynnych ruchach. Unikaj trudnego żargonu, chwal za drobne sukcesy.
-                    - Średniozaawansowany: Wprowadzaj pojęcia takie jak 'throttle management', 'proporcje roll/pitch'. Analizuj dokładniej płynność zakrętów.
-                    - Ekspert: Oczekuj perfekcji. Używaj profesjonalnego żargonu (propwash, rates, PID tuning, micro-adjustments, feedforward). Bądź bardzo surowy w ocenie płynności drążków.
+                    Jesteś elitarnym instruktorem dronów FPV. Analizujesz lot kursanta.
+                    Poziom: {inst_skill}. Styl: {inst_ind}.
                     
                     DANE TELEMETRYCZNE:
-                    - Płynność drążków (Jerk): {stats['jr']:.2f} (wynik bliżej 0-2 to lot bardzo płynny, powyżej 4 to nerwowy/szarpany).
-                    - Wibracje i stabilność (Kondycja): {stats['health']}%.
+                    - Płynność Roll: {stats['jr']:.2f}
+                    - Płynność Pitch: {stats['jp']:.2f}
+                    - Płynność Yaw: {stats['jy']:.2f}
+                    - Max użycie gazu: {stats['max_t']:.0f} (zazwyczaj skala to 1000-2000)
+                    - Kondycja Drona: {stats['health']}%
                     
-                    Twoje zadanie to wygenerowanie oceny, komentarza i zadania domowego w formacie JSON.
-                    1. Oceń lot (1-10). Bądź obiektywny względem poziomu zaawansowania.
-                    2. Stwórz diagnozę dostosowaną językowo do poziomu ({inst_skill}). Wskaż na podstawie danych z Jerk i Kondycji, co kursant robi dobrze, a co musi poprawić.
-                    3. Zaproponuj JEDNO precyzyjne ćwiczenie na następny trening z użyciem gogli FPV.
+                    Twoje zadanie (zwróć TYLKO czysty JSON):
+                    1. "ocena": Oceń lot (1-10) obiektywnie do poziomu.
+                    2. "diagnoza": Skomentuj płynność drążków na podstawie powyższych danych. Zwróć uwagę na oś YAW (obrót wokół własnej osi), czy jest szarpana ({stats['jy']:.2f}).
+                    3. "zadanie": Jedno precyzyjne ćwiczenie na następny trening.
                     
-                    Zwróć TYLKO czysty obiekt JSON:
-                    {{"ocena": 8, "diagnoza": "Cześć! Super lot, jednak...", "zadanie": "Następnym razem zrób..."}}
+                    Format: {{"ocena": 8, "diagnoza": "Cześć...", "zadanie": "Zrób..."}}
                     """
                     raw = generate_intel(prompt)
                     try:
                         js = json.loads(raw.replace("```json","").replace("```","").strip())
                         st.session_state.instructor_draft = f"### Raport z lotu: {inst_ind}\n**OCENA:** {js['ocena']}/10\n\n**KOMENTARZ TRENERA:**\n{js['diagnoza']}\n\n**CEL NA NASTĘPNY TRENING:**\n{js['zadanie']}"
                         st.session_state.temp_metrics = stats
-                    except: st.error("Problem z wygenerowaniem odpowiedzi AI. Spróbuj jeszcze raz.")
+                    except: st.error("Błąd AI. Spróbuj jeszcze raz.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         if st.session_state.instructor_draft:
             st.markdown("<p class='mono-text'>TWÓJ KOMENTARZ (DO EDYCJI)</p>", unsafe_allow_html=True)
-            final_rep = st.text_area("Możesz edytować ten tekst przed wysłaniem:", value=st.session_state.instructor_draft, height=250, label_visibility="collapsed")
+            final_rep = st.text_area("Edytuj tekst:", value=st.session_state.instructor_draft, height=250, label_visibility="collapsed")
             
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("WYŚLIJ RAPORT DO KURSANTA"):
@@ -393,10 +371,8 @@ if user_data['rola'] == "Instruktor":
                 score = int(match.group(1)) if match else 5
                 
                 new_record = {
-                    "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "ocena": score, "raport": final_rep, "wideo": vid_link, 
-                    "type": inst_ind, "premium": True,
-                    "stats": st.session_state.temp_metrics
+                    "data": datetime.now().strftime("%Y-%m-%d %H:%M"), "ocena": score, "raport": final_rep, 
+                    "wideo": vid_link, "type": inst_ind, "premium": True, "stats": st.session_state.temp_metrics
                 }
                 history = target_data.get('zadania', [])
                 history.append(new_record)
@@ -444,7 +420,7 @@ else:
         
         if st.session_state.industry_select:
             st.markdown("<br><h2>TWOJE DOŚWIADCZENIE</h2>", unsafe_allow_html=True)
-            skill = st.select_slider("Wybierz swój aktualny poziom, byśmy mogli dostosować ocenę AI:", options=["Początkujący", "Średniozaawansowany", "Ekspert"], value=st.session_state.skill_select, label_visibility="collapsed")
+            skill = st.select_slider("Wybierz swój aktualny poziom:", options=["Początkujący", "Średniozaawansowany", "Ekspert"], value=st.session_state.skill_select, label_visibility="collapsed")
             st.session_state.skill_select = skill
             
             st.markdown("<br><div class='cta-btn'>", unsafe_allow_html=True)
@@ -455,7 +431,7 @@ else:
 
     elif st.session_state.flow_state == 'upload':
         st.markdown(f"<h2>ANALIZA LOTU: <span style='color: {st.session_state.theme_color};'>{st.session_state.industry_select.upper()}</span></h2>", unsafe_allow_html=True)
-        if st.button("← Wróć do menu głównego"): 
+        if st.button("← Wróć do menu"): 
             st.session_state.flow_state = 'launchpad'
             st.session_state.env_select = None
             st.session_state.industry_select = None
@@ -477,42 +453,33 @@ else:
                 st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
                 if st.button(f"ROZPOCZNIJ ANALIZĘ (-{cost} TOKENÓW)"):
                     if user_data.get('tokeny', 0) >= cost:
-                        with st.status("Analizowanie danych...", expanded=True) as status:
-                            st.write("Wydobywanie danych telemetrycznych...")
+                        with st.status("Analizowanie...", expanded=True) as status:
                             dec = get_decoder()
                             with open("/tmp/u.bbl", "wb") as f: f.write(u_log.getbuffer())
                             subprocess.run([dec, "/tmp/u.bbl"], stdout=subprocess.DEVNULL)
                             csvs = sorted(glob.glob("/tmp/u*.csv"))
                             
                             if csvs:
-                                st.write("Tworzenie wizualizacji...")
                                 df = pd.read_csv(csvs[0])
-                                
                                 stats = render_terminal_hud(df, mode=st.session_state.env_select, premium=(cost==2))
                                 
-                                st.write("Opracowywanie raportu przez instruktora AI...")
                                 if init_ai():
-                                    # ZAAWANSOWANY PROMPT KURSANT
                                     prompt = f"""
-                                    Jesteś elitarnym trenerem dronów FPV. Przeprowadzasz analizę automatyczną dla kursanta: {user_data['imie']}.
-                                    Poziom ucznia: {st.session_state.skill_select}. Styl lotu: {st.session_state.industry_select}.
+                                    Jesteś elitarnym trenerem dronów FPV. Analizujesz lot: {user_data['imie']}.
+                                    Poziom: {st.session_state.skill_select}. Styl: {st.session_state.industry_select}.
                                     
-                                    WYTYCZNE ZALEŻNE OD POZIOMU:
-                                    - Początkujący: Motywuj i chwal za odwagę. Skup się na gładkim poruszaniu prawym drążkiem (pitch/roll). Używaj języka łatwego do przyswojenia.
-                                    - Średniozaawansowany: Analizuj "throttle management" (kontrolę gazu) i zjawisko szarpania. Wskaż, że gładkie ruchy = lepsze wideo.
-                                    - Ekspert: Zero litości. Wejdź głęboko w detale mikrokorekt drążków i zjawiska "propwash". Wymagaj pełnej integracji człowieka z maszyną.
-
                                     DANE Z CZARNEJ SKRZYNKI:
-                                    - Płynność drążków (Jerk): {stats['jr']:.2f} (optymalnie poniżej 2).
-                                    - Kondycja / stabilność lotu: {stats['health']}%.
+                                    - Płynność Roll: {stats['jr']:.2f}
+                                    - Płynność Pitch: {stats['jp']:.2f}
+                                    - Płynność Yaw: {stats['jy']:.2f}
+                                    - Kondycja lotu: {stats['health']}%
                                     
                                     WYMAGANY WYNIK - Czysty JSON:
-                                    1. "ocena": Oceń lot 1-10 stosownie do wybranego poziomu.
-                                    2. "diagnoza": Wyjaśnij kursantowi, co oznacza jego wskaźnik "Jerk" ({stats['jr']:.2f}) w praktyce i co musi zmienić w obsłudze aparatury.
-                                    3. "zadanie": Daj JEDNO wysoce precyzyjne ćwiczenie na kolejny lot FPV (np. 'Lataj ósemki z zablokowaną kamerą pod kątem 30 stopni').
+                                    1. "ocena": 1-10.
+                                    2. "diagnoza": Wyjaśnij kursantowi jego metryki płynności, nawiązując do konkretnych osi. Używaj tonu adekwatnego do poziomu {st.session_state.skill_select}.
+                                    3. "zadanie": Jedno wysoce precyzyjne ćwiczenie.
                                     
-                                    Zwróć TYLKO czysty obiekt JSON:
-                                    {{"ocena": 8, "diagnoza": "Cześć! Super lot...", "zadanie": "Następnym razem..."}}
+                                    Format: {{"ocena": 8, "diagnoza": "...", "zadanie": "..."}}
                                     """
                                     raw_ai = generate_intel(prompt)
                                     try:
@@ -522,33 +489,28 @@ else:
                                         
                                         history = user_data.get('zadania', [])
                                         history.append({
-                                            "data": datetime.now().strftime("%Y-%m-%d %H:%M"), 
-                                            "ocena": js['ocena'], 
-                                            "raport": txt, 
-                                            "type": st.session_state.industry_select, 
-                                            "premium": (cost==2),
-                                            "stats": stats
+                                            "data": datetime.now().strftime("%Y-%m-%d %H:%M"), "ocena": js['ocena'], 
+                                            "raport": txt, "type": st.session_state.industry_select, 
+                                            "premium": (cost==2), "stats": stats
                                         })
                                         
                                         supabase.table('konta').update({
-                                            "zadania": history, 
-                                            "tokeny": user_data['tokeny'] - cost
+                                            "zadania": history, "tokeny": user_data['tokeny'] - cost
                                         }).eq('email', user_data['email']).execute()
                                         
                                         status.update(label="Raport Gotowy", state="complete", expanded=False)
                                         time.sleep(1)
                                         st.rerun()
-                                    except: st.error("Niestety AI miało problem z przetworzeniem zapytania. Spróbuj ponownie.")
-                    else: st.error("Niewystarczająca liczba tokenów na koncie.")
+                                    except: st.error("Błąd AI. Spróbuj ponownie.")
+                    else: st.error("Brak tokenów.")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<br><p class='mono-text'>TWOJE POSTĘPY I HISTORIA LOTÓW</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>TWOJE POSTĘPY</p>", unsafe_allow_html=True)
         for z in reversed(user_data.get('zadania', [])):
             if isinstance(z, dict):
                 icon = "💎" if z.get('premium') else "📄"
                 with st.expander(f"{icon} {z.get('data')} | {z.get('type','Lot')} | Ocena: {z.get('ocena')}/10"):
                     st.markdown(z.get('raport'))
-                    if 'stats' in z and z.get('premium'):
-                        render_history_stats(z['stats'])
+                    if 'stats' in z and z.get('premium'): render_history_stats(z['stats'])
             else:
                 with st.expander("Stary Raport (Archiwum)"): st.markdown(str(z))
