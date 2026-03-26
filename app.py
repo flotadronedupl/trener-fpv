@@ -19,7 +19,7 @@ from plotly.subplots import make_subplots
 # ==========================================
 # 1. ENTERPRISE CONFIG & STATE
 # ==========================================
-st.set_page_config(page_title="FCIS | Data Command", page_icon="⬛", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="FCIS | Dowództwo Danych", page_icon="⬛", layout="wide", initial_sidebar_state="collapsed")
 
 def init_session():
     defaults = {
@@ -33,7 +33,7 @@ def init_session():
 init_session()
 
 # ==========================================
-# 2. VERCEL / PALANTIR DARK UI (CSS)
+# 2. VERCEL / PALANTIR DARK UI (CSS) - BEZ ZMIAN WIZUALNYCH
 # ==========================================
 accent = st.session_state.theme_color
 
@@ -73,8 +73,8 @@ st.markdown(f"""
     .cta-btn>button:hover {{ background: #fff; box-shadow: 0 0 15px {accent}88; }}
     
     /* Clean Inputs */
-    .stTextInput input, .stTextArea textarea {{ background: #0a0a0a !important; border: 1px solid #333 !important; color: #fff !important; }}
-    .stTextInput input:focus, .stTextArea textarea:focus {{ border-color: {accent} !important; box-shadow: none !important; }}
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {{ background: #0a0a0a !important; border: 1px solid #333 !important; color: #fff !important; }}
+    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {{ border-color: {accent} !important; box-shadow: none !important; }}
     
     /* Hide Streamlit Branding */
     #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
@@ -98,7 +98,7 @@ def generate_intel(prompt):
         best = next((m for m in models if '1.5-flash' in m), models[0])
         return genai.GenerativeModel(best).generate_content(prompt).text
     except Exception as e:
-        return f'{{"ocena": 0, "diagnoza": "SYSTEM FAULT: AI UNREACHABLE", "zadanie": "MANUAL OVERRIDE REQUIRED"}}'
+        return f'{{"ocena": 0, "diagnoza": "BŁĄD SYSTEMU: BRAK POŁĄCZENIA Z AI", "zadanie": "WYMAGANA RĘCZNA KOREKTA"}}'
 
 @st.cache_resource(show_spinner=False)
 def get_decoder():
@@ -122,7 +122,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
         roll = [c for c in df.columns if 'rcCommand[0]' in c or ('rcCommand' in c and '0' in c)][0]
         pitch = [c for c in df.columns if 'rcCommand[1]' in c or ('rcCommand' in c and '1' in c)][0]
     except:
-        st.error("DATA CORRUPTION: Telemetry axes not found.")
+        st.error("BŁĄD DANYCH: Nie odnaleziono osi telemetrii w pliku.")
         return None
 
     jr, jp = df[roll].diff().abs().mean(), df[pitch].diff().abs().mean()
@@ -130,21 +130,21 @@ def render_terminal_hud(df, mode="Real", premium=False):
     smoothness = max(0, 10 - (jr + jp))
     health = max(0, min(100, 100 - ((jr + jp) * 12)))
     
-    st.markdown("<p class='mono-text'>SYSTEM KPI</p>", unsafe_allow_html=True)
+    st.markdown("<p class='mono-text'>GŁÓWNE WSKAŹNIKI SYSTEMU (KPI)</p>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
-    m1.metric("THROTTLE LOAD", f"{avg_t:.0f}")
-    m2.metric("FLIGHT SMOOTHNESS", f"{smoothness:.1f} / 10")
-    m3.metric("HARDWARE INTEGRITY", f"{health:.0f}%")
+    m1.metric("OBCIĄŻENIE GAZU", f"{avg_t:.0f}")
+    m2.metric("PŁYNNOŚĆ LOTU", f"{smoothness:.1f} / 10")
+    m3.metric("INTEGRALNOŚĆ SPRZĘTU", f"{health:.0f}%")
 
     if premium:
-        st.markdown("<br><p class='mono-text'>DEEP ANALYTICS</p>", unsafe_allow_html=True)
-        t1, t2, t3 = st.tabs(["AXIS TELEMETRY", "3D VECTOR PATH", "POWER DIAGNOSTICS"])
+        st.markdown("<br><p class='mono-text'>GŁĘBOKA ANALITYKA</p>", unsafe_allow_html=True)
+        t1, t2, t3 = st.tabs(["TELEMETRIA OSI", "WEKTOROWA ŚCIEŻKA 3D", "DIAGNOSTYKA ZASILANIA"])
         
         pdf = df.iloc[::max(1, len(df)//5000)] # Downsample for web performance
         
         with t1:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(y=pdf[thr], name="THR", line=dict(color='#333', width=1)))
+            fig.add_trace(go.Scatter(y=pdf[thr], name="GAZ (THR)", line=dict(color='#333', width=1)))
             fig.add_trace(go.Scatter(y=pdf[roll], name="ROLL", line=dict(color=color, width=2)))
             fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
@@ -159,12 +159,12 @@ def render_terminal_hud(df, mode="Real", premium=False):
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
             if v_col and mode == "Real":
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
-                f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="VOLTAGE", line=dict(color='#ededed')), secondary_y=False)
-                f_bat.add_trace(go.Scatter(y=pdf[thr], name="LOAD", fill='tozeroy', opacity=0.1, line=dict(color=color)), secondary_y=True)
+                f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="NAPIĘCIE (V)", line=dict(color='#ededed')), secondary_y=False)
+                f_bat.add_trace(go.Scatter(y=pdf[thr], name="OBCIĄŻENIE", fill='tozeroy', opacity=0.1, line=dict(color=color)), secondary_y=True)
                 f_bat.update_layout(template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=0,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
             else:
-                st.info("Power telemetry not present in Simulator data.")
+                st.info("Brak telemetrii zasilania w pliku z Symulatora.")
             
     return {"jr": jr, "jp": jp, "health": health}
 
@@ -172,31 +172,31 @@ def render_terminal_hud(df, mode="Real", premium=False):
 # 5. ZERO-FRICTION AUTHENTICATION
 # ==========================================
 if st.session_state.auth_user is None:
-    st.markdown("<br><br><br><h1 style='text-align: center;'>FCIS</h1><p class='mono-text' style='text-align: center;'>FLIGHT COMMAND INTELLIGENCE SYSTEM</p><br>", unsafe_allow_html=True)
+    st.markdown("<br><br><br><h1 style='text-align: center;'>FCIS</h1><p class='mono-text' style='text-align: center;'>ZAAWANSOWANY SYSTEM DOWODZENIA FPV</p><br>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         st.markdown("<div class='bento-card'>", unsafe_allow_html=True)
-        t1, t2 = st.tabs(["Sign In", "Enlist"])
+        t1, t2 = st.tabs(["Logowanie", "Rejestracja"])
         with t1:
-            em = st.text_input("Operator ID")
-            pw = st.text_input("Clearance Code", type="password")
+            em = st.text_input("ID Operatora (Email)")
+            pw = st.text_input("Kod Autoryzacyjny (Hasło)", type="password")
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-            if st.button("Authenticate"):
+            if st.button("Autoryzuj Dostęp"):
                 res = supabase.table('konta').select('*').eq('email', em).execute()
                 if res.data and res.data[0]['haslo'] == pw:
                     st.session_state.auth_user = em
                     st.session_state.role = res.data[0]['rola']
                     st.rerun()
-                else: st.error("Authentication Failed.")
+                else: st.error("Odmowa dostępu. Nieprawidłowe dane.")
             st.markdown("</div>", unsafe_allow_html=True)
         with t2:
-            rem = st.text_input("New Operator ID")
-            rpw = st.text_input("New Clearance Code", type="password")
-            rnm = st.text_input("Callsign")
-            if st.button("Initialize Profile"):
+            rem = st.text_input("Nowe ID Operatora")
+            rpw = st.text_input("Nowy Kod Autoryzacyjny", type="password")
+            rnm = st.text_input("Kryptonim / Imię")
+            if st.button("Zainicjuj Profil"):
                 supabase.table('konta').insert({'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 'tokeny': 10, 'zadania': []}).execute()
-                st.success("Profile created. Proceed to Sign In.")
+                st.success("Profil utworzony. Przejdź do zakładki Logowanie.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -207,79 +207,101 @@ user_data = supabase.table('konta').select('*').eq('email', st.session_state.aut
 # 6. INSTRUCTOR WORKFLOW (SPLIT VIEW)
 # ==========================================
 if user_data['rola'] == "Instruktor":
-    st.markdown("<p class='mono-text'>COMMAND OVERSEER TERMINAL</p>", unsafe_allow_html=True)
+    st.markdown("<p class='mono-text'>TERMINAL DOWÓDCY OPERACYJNEGO</p>", unsafe_allow_html=True)
     
     col_nav, col_main = st.columns([1, 3])
     
     with col_nav:
-        st.markdown(f"<div class='bento-card'><p class='mono-text'>ACTIVE PERSONNEL</p>", unsafe_allow_html=True)
+        st.markdown(f"<div class='bento-card'><p class='mono-text'>AKTYWNY PERSONEL</p>", unsafe_allow_html=True)
         cadets = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
-        if not cadets: st.warning("Database empty."); st.stop()
-        selected_email = st.radio("Select Target:", [k['email'] for k in cadets], label_visibility="collapsed")
+        if not cadets: st.warning("Baza danych pusta."); st.stop()
+        selected_email = st.radio("Wybierz Cel:", [k['email'] for k in cadets], label_visibility="collapsed")
         target_data = next(k for k in cadets if k['email'] == selected_email)
         
-        st.markdown("<br><p class='mono-text'>MISSION CONFIG</p>", unsafe_allow_html=True)
-        inst_env = st.selectbox("Environment", ["Real Flight", "Simulator"])
+        # SYSTEM ZARZĄDZANIA TOKENAMI DLA INSTRUKTORA
+        st.markdown(f"<br><p class='mono-text'>ZASOBY KADETA: {target_data.get('tokeny', 0)} TOKENÓW</p>", unsafe_allow_html=True)
+        col_t1, col_t2 = st.columns([2, 1])
+        with col_t1:
+            dodaj_tok = st.number_input("Ilość", min_value=1, max_value=100, value=5, label_visibility="collapsed")
+        with col_t2:
+            st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
+            if st.button("DODAJ"):
+                nowy_stan = target_data.get('tokeny', 0) + dodaj_tok
+                supabase.table('konta').update({"tokeny": nowy_stan}).eq('email', selected_email).execute()
+                st.toast(f"Dodano {dodaj_tok} tokenów.", icon="💳")
+                time.sleep(1)
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<br><p class='mono-text'>KONFIGURACJA MISJI</p>", unsafe_allow_html=True)
+        inst_env = st.selectbox("Środowisko", ["Lot Rzeczywisty", "Symulator"])
         inst_ind = "Standard"
-        if inst_env == "Real Flight":
-            inst_ind = st.selectbox("Focus", ["Military/Recon", "Pro-Racing", "Freestyle"])
-        inst_skill = st.selectbox("Target Skill", ["Kadet", "Pilot", "Elita"])
+        if inst_env == "Lot Rzeczywisty":
+            inst_ind = st.selectbox("Skupienie taktyczne", ["Militarny/Rozpoznanie", "Pro-Racing", "Freestyle"])
+        inst_skill = st.selectbox("Poziom Umiejętności Celu", ["Kadet", "Pilot", "Elita"])
         
-        st.session_state.theme_color = '#00ff66' if 'Military' in inst_ind else '#ff4400' if 'Racing' in inst_ind else '#ededed'
+        st.session_state.theme_color = '#00ff66' if 'Militarny' in inst_ind else '#ff4400' if 'Racing' in inst_ind else '#ededed'
         
         st.markdown("<br><p class='mono-text'>SYSTEM</p>", unsafe_allow_html=True)
-        if st.button("Terminate Session"): st.session_state.auth_user = None; st.rerun()
+        if st.button("Zakończ Sesję"): st.session_state.auth_user = None; st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_main:
-        st.markdown(f"<h2>DOSSIER: {target_data['imie'].upper()}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2>AKTA: {target_data['imie'].upper()}</h2>", unsafe_allow_html=True)
         
         # Triage Upload
         c_upl, c_vid = st.columns(2)
-        with c_upl: log_file = st.file_uploader("Drop Telemetry (BBL/CSV)", type=['bbl', 'csv'], label_visibility="collapsed")
-        with c_vid: vid_link = st.text_input("Recon Video URL", placeholder="https://...")
+        with c_upl: log_file = st.file_uploader("Upuść Telemetrię (BBL/CSV)", type=['bbl', 'csv'], label_visibility="collapsed")
+        with c_vid: vid_link = st.text_input("URL Nagrania z Misji", placeholder="https://...")
 
         df_active = None
         if log_file:
-            with st.status("Processing Binary Data...", expanded=False) as status:
+            with st.status("Przetwarzanie Danych Binarnych...", expanded=False) as status:
                 if log_file.name.endswith('.csv'): 
                     df_active = pd.read_csv(log_file)
                 else:
-                    st.write("Extracting Blackbox vectors...")
+                    st.write("Ekstrakcja wektorów Blackbox...")
                     dec = get_decoder()
                     with open("/tmp/i.bbl", "wb") as f: f.write(log_file.getbuffer())
                     subprocess.run([dec, "/tmp/i.bbl"], stdout=subprocess.DEVNULL)
                     csvs = sorted(glob.glob("/tmp/i*.csv"))
                     if csvs: df_active = pd.read_csv(csvs[0])
-                status.update(label="Data Extracted", state="complete", expanded=False)
+                status.update(label="Dane Rozkodowane", state="complete", expanded=False)
 
         if df_active is not None:
-            stats = render_terminal_hud(df_active, mode="Real" if inst_env=="Real Flight" else "Sim", premium=True)
+            stats = render_terminal_hud(df_active, mode="Real" if inst_env=="Lot Rzeczywisty" else "Sim", premium=True)
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-            if st.button("GENERATE AI INTELLIGENCE"):
+            if st.button("GENERUJ RAPORT TAKTYCZNY AI"):
                 if init_ai():
                     prompt = f"""
-                    Instruktor ocenia logi.
-                    Pilot: {inst_skill}, Tryb: {inst_env}, Branża: {inst_ind}.
-                    Jerk: {stats['jr']:.2f}, Health: {stats['health']}%.
-                    Zwróć TYLKO czysty JSON: {{"ocena": 1-10, "diagnoza": "Inżynieryjna ocena", "zadanie": "Konkretne zadanie"}}
+                    Jesteś elitarnym dowódcą i ekspertem od dronów FPV (First Person View).
+                    Analizujesz surowe dane z lotu DRONA FPV (to NIE JEST samochód, ani samolot komercyjny!).
+                    
+                    DANE OPERACYJNE:
+                    - Poziom pilota: {inst_skill}. (Kadet: chwal i ucz podstaw; Elita: punktuj bezlitośnie każdy najmniejszy błąd).
+                    - Typ Misji: {inst_ind}. (Jeśli Militarny: najważniejsza jest stabilność obrazu i brak wibracji. Jeśli Racing: kluczowa jest agresja, szybkie wchodzenie w zakręty. Jeśli Freestyle: liczy się kontrola przepustnicy i płynność (flow)).
+                    - Szarpnięcia drążków (Jerk): {stats['jr']:.2f}.
+                    - Kondycja elektroniki (Health): {stats['health']}%.
+                    
+                    Zwróć TYLKO czysty obiekt JSON bez znaczników markdown. Struktura musi wyglądać tak:
+                    {{"ocena": 1-10, "diagnoza": "Krótka, inżynieryjna ocena lotu FPV", "zadanie": "Konkretne zadanie treningowe dla drona FPV na kolejny lot"}}
                     """
                     raw = generate_intel(prompt)
                     try:
                         js = json.loads(raw.replace("```json","").replace("```","").strip())
-                        st.session_state.instructor_draft = f"### DEBRIEF: {inst_ind}\n**SCORE:** {js['ocena']}/10\n\n**DIAGNOSIS:**\n{js['diagnoza']}\n\n**DIRECTIVE:**\n{js['zadanie']}"
+                        st.session_state.instructor_draft = f"### ODPRAWA: {inst_ind}\n**OCENA:** {js['ocena']}/10\n\n**DIAGNOZA:**\n{js['diagnoza']}\n\n**ROZKAZ TRENINGOWY:**\n{js['zadanie']}"
                         st.session_state.temp_metrics = stats
-                    except: st.error("AI Parse Error. Retrying required.")
+                    except: st.error("Błąd parsowania AI. Proszę spróbować ponownie.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         if st.session_state.instructor_draft:
-            st.markdown("<p class='mono-text'>MANUAL OVERRIDE</p>", unsafe_allow_html=True)
-            final_rep = st.text_area("Refine AI output:", value=st.session_state.instructor_draft, height=250, label_visibility="collapsed")
+            st.markdown("<p class='mono-text'>RĘCZNA KOREKTA (NADOBOWIĄZKOWA)</p>", unsafe_allow_html=True)
+            final_rep = st.text_area("Edytuj wygenerowany raport AI:", value=st.session_state.instructor_draft, height=250, label_visibility="collapsed")
             
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-            if st.button("DEPLOY TO CADET"):
-                match = re.search(r"SCORE:\s*(\d+)/10", final_rep)
+            if st.button("ZATWIERDŹ I WYŚLIJ DO KADETA"):
+                match = re.search(r"OCENA:\s*(\d+)/10", final_rep)
                 score = int(match.group(1)) if match else 5
                 
                 new_record = {
@@ -292,19 +314,19 @@ if user_data['rola'] == "Instruktor":
                 supabase.table('konta').update({"zadania": history}).eq('email', selected_email).execute()
                 
                 st.session_state.instructor_draft = None
-                st.toast("Deployed successfully.", icon="✅")
+                st.toast("Pomyślnie wysłano do Kadeta.", icon="✅")
                 time.sleep(1)
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
             
         # Legacy History View
-        st.markdown("<br><p class='mono-text'>ARCHIVE RECORDS</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>ARCHIWUM OPERACJI</p>", unsafe_allow_html=True)
         for z in reversed(target_data.get('zadania', [])):
             if isinstance(z, dict):
-                with st.expander(f"OP: {z.get('data')} | RATING: {z.get('ocena')}/10"):
+                with st.expander(f"OP: {z.get('data')} | OCENA: {z.get('ocena')}/10"):
                     st.markdown(z.get('raport'))
             else:
-                with st.expander("LEGACY LOG"): st.markdown(str(z))
+                with st.expander("STARE ZAPISY"): st.markdown(str(z))
 
 # ==========================================
 # 7. CADET WORKFLOW (BENTO LAUNCHPAD)
@@ -313,59 +335,59 @@ else:
     # Sidebar Minimalist
     with st.sidebar:
         st.markdown(f"<p class='mono-text'>ID: {user_data['imie']}</p>", unsafe_allow_html=True)
-        st.metric("AVAILABLE TOKENS", user_data.get('tokeny', 0))
+        st.metric("DOSTĘPNE TOKENY", user_data.get('tokeny', 0))
         st.markdown("<br><br>", unsafe_allow_html=True)
-        if st.button("Sign Out"): st.session_state.auth_user = None; st.rerun()
+        if st.button("Wyloguj Się"): st.session_state.auth_user = None; st.rerun()
 
     # --- PHASE 2: BENTO BOX LAUNCHPAD ---
     if st.session_state.flow_state == 'launchpad':
-        st.markdown("<h1>SELECT OPERATION</h1>", unsafe_allow_html=True)
+        st.markdown("<h1>WYBIERZ OPERACJĘ</h1>", unsafe_allow_html=True)
         
         # STEP 1: Environment
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("<div class='bento-card'><h3>🚁 REAL FLIGHT</h3><p class='mono-text'>Hardware Telemetry</p></div>", unsafe_allow_html=True)
-            if st.button("Select Real Flight", key="btn_real"): 
+            st.markdown("<div class='bento-card'><h3>🚁 LOT RZECZYWISTY</h3><p class='mono-text'>Telemetria Sprzętowa Drona</p></div>", unsafe_allow_html=True)
+            if st.button("Wybierz Lot Rzeczywisty", key="btn_real"): 
                 st.session_state.env_select = "Real"
                 st.rerun()
         with c2:
-            st.markdown("<div class='bento-card'><h3>🎮 SIMULATOR</h3><p class='mono-text'>Virtual Training</p></div>", unsafe_allow_html=True)
-            if st.button("Select Simulator", key="btn_sim"): 
+            st.markdown("<div class='bento-card'><h3>🎮 SYMULATOR</h3><p class='mono-text'>Trening Wirtualny</p></div>", unsafe_allow_html=True)
+            if st.button("Wybierz Symulator", key="btn_sim"): 
                 st.session_state.env_select = "Sim"
-                st.session_state.industry_select = "Sim Training"
+                st.session_state.industry_select = "Trening Sim"
                 st.session_state.theme_color = "#b026ff"
                 st.rerun()
 
         # STEP 2: Industry (Cascade)
         if st.session_state.env_select == "Real":
-            st.markdown("<br><h2>SPECIFY FOCUS</h2>", unsafe_allow_html=True)
+            st.markdown("<br><h2>WYBIERZ SPECJALIZACJĘ</h2>", unsafe_allow_html=True)
             i1, i2, i3 = st.columns(3)
             with i1:
-                st.markdown("<div class='bento-card' style='border-color:#00ff6633;'><h4 style='color:#00ff66!important;'>MILITARY/RECON</h4><p class='mono-text'>Stealth & Stability</p></div>", unsafe_allow_html=True)
-                if st.button("Select Military", key="ind_mil"): st.session_state.industry_select = "Military"; st.session_state.theme_color = "#00ff66"; st.rerun()
+                st.markdown("<div class='bento-card' style='border-color:#00ff6633;'><h4 style='color:#00ff66!important;'>MILITARNY/ROZPOZNANIE</h4><p class='mono-text'>Skrytość & Stabilność</p></div>", unsafe_allow_html=True)
+                if st.button("Wybierz Militarny", key="ind_mil"): st.session_state.industry_select = "Militarny/Rozpoznanie"; st.session_state.theme_color = "#00ff66"; st.rerun()
             with i2:
-                st.markdown("<div class='bento-card' style='border-color:#ff440033;'><h4 style='color:#ff4400!important;'>PRO-RACING</h4><p class='mono-text'>Agility & Speed</p></div>", unsafe_allow_html=True)
-                if st.button("Select Racing", key="ind_rac"): st.session_state.industry_select = "Racing"; st.session_state.theme_color = "#ff4400"; st.rerun()
+                st.markdown("<div class='bento-card' style='border-color:#ff440033;'><h4 style='color:#ff4400!important;'>PRO-RACING</h4><p class='mono-text'>Zwinność & Prędkość</p></div>", unsafe_allow_html=True)
+                if st.button("Wybierz Racing", key="ind_rac"): st.session_state.industry_select = "Pro-Racing"; st.session_state.theme_color = "#ff4400"; st.rerun()
             with i3:
-                st.markdown("<div class='bento-card' style='border-color:#00ccff33;'><h4 style='color:#00ccff!important;'>FREESTYLE</h4><p class='mono-text'>Flow & Control</p></div>", unsafe_allow_html=True)
-                if st.button("Select Freestyle", key="ind_fre"): st.session_state.industry_select = "Freestyle"; st.session_state.theme_color = "#00ccff"; st.rerun()
+                st.markdown("<div class='bento-card' style='border-color:#00ccff33;'><h4 style='color:#00ccff!important;'>FREESTYLE</h4><p class='mono-text'>Flow & Kontrola</p></div>", unsafe_allow_html=True)
+                if st.button("Wybierz Freestyle", key="ind_fre"): st.session_state.industry_select = "Freestyle"; st.session_state.theme_color = "#00ccff"; st.rerun()
 
         # STEP 3: Skill Level (Cascade)
         if st.session_state.industry_select:
-            st.markdown("<br><h2>OPERATOR CLASSIFICATION</h2>", unsafe_allow_html=True)
-            skill = st.select_slider("Select your current proficiency", options=["Kadet", "Pilot", "Elita"], value=st.session_state.skill_select, label_visibility="collapsed")
+            st.markdown("<br><h2>KLASYFIKACJA OPERATORA</h2>", unsafe_allow_html=True)
+            skill = st.select_slider("Wybierz swój aktualny poziom", options=["Kadet", "Pilot", "Elita"], value=st.session_state.skill_select, label_visibility="collapsed")
             st.session_state.skill_select = skill
             
             st.markdown("<br><div class='cta-btn'>", unsafe_allow_html=True)
-            if st.button("INITIALIZE TERMINAL UPLOAD"):
+            if st.button("ZAINICJUJ TRANSFER DANYCH"):
                 st.session_state.flow_state = 'upload'
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
     # --- PHASE 3/4: UPLOAD & DASHBOARD ---
     elif st.session_state.flow_state == 'upload':
-        st.markdown(f"<h2>DATA TERMINAL: {st.session_state.industry_select.upper()}</h2>", unsafe_allow_html=True)
-        if st.button("← Abort & Return"): 
+        st.markdown(f"<h2>TERMINAL DANYCH: {st.session_state.industry_select.upper()}</h2>", unsafe_allow_html=True)
+        if st.button("← Przerwij i Wróć"): 
             st.session_state.flow_state = 'launchpad'
             st.session_state.env_select = None
             st.session_state.industry_select = None
@@ -374,43 +396,50 @@ else:
         c_tier, c_drop = st.columns([1, 2])
         with c_tier:
             st.markdown("<div class='bento-card'>", unsafe_allow_html=True)
-            st.markdown("<p class='mono-text'>ANALYSIS TIER</p>", unsafe_allow_html=True)
-            tier = st.radio("Select Level:", ["Basic (1 Token)", "Premium (2 Tokens)"], label_visibility="collapsed")
-            cost = 1 if "Basic" in tier else 2
+            st.markdown("<p class='mono-text'>POZIOM ANALIZY</p>", unsafe_allow_html=True)
+            tier = st.radio("Wybierz Pakiet:", ["Podstawowy (1 Token)", "Premium (2 Tokeny)"], label_visibility="collapsed")
+            cost = 1 if "Podstawowy" in tier else 2
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c_drop:
-            u_log = st.file_uploader("Drop Telemetry File (.bbl or .csv)", type=['bbl', 'csv'], label_visibility="collapsed")
+            u_log = st.file_uploader("Upuść Plik Telemetrii (.bbl lub .csv)", type=['bbl', 'csv'], label_visibility="collapsed")
             
             if u_log:
                 st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-                if st.button(f"EXECUTE PROTOCOL (-{cost} TOKENS)"):
+                if st.button(f"WYKONAJ PROTOKÓŁ (-{cost} TOKENÓW)"):
                     if user_data.get('tokeny', 0) >= cost:
-                        with st.status("Analyzing...", expanded=True) as status:
-                            st.write("Extracting binaries...")
+                        with st.status("Analizowanie...", expanded=True) as status:
+                            st.write("Ekstrakcja wektorów binarnych...")
                             dec = get_decoder()
                             with open("/tmp/u.bbl", "wb") as f: f.write(u_log.getbuffer())
                             subprocess.run([dec, "/tmp/u.bbl"], stdout=subprocess.DEVNULL)
                             csvs = sorted(glob.glob("/tmp/u*.csv"))
                             
                             if csvs:
-                                st.write("Processing vectors...")
+                                st.write("Przetwarzanie telemetrii...")
                                 df = pd.read_csv(csvs[0])
                                 
-                                st.write("Querying Artificial Intelligence...")
+                                st.write("Łączenie z modułem AI...")
                                 stats = render_terminal_hud(df, mode=st.session_state.env_select, premium=(cost==2))
                                 
                                 if init_ai():
                                     prompt = f"""
-                                    Ocena pilota FPV. Poziom: {st.session_state.skill_select}. Misja: {st.session_state.industry_select}.
-                                    Jerk: {stats['jr']:.2f}.
-                                    Zwróć TYLKO czysty obiekt JSON bez znaczników markdown: {{"ocena": 1-10, "diagnoza": "Inżynieryjny tekst", "zadanie": "Trening"}}
+                                    Jesteś zaawansowanym asystentem AI szkolącym pilotów DRONÓW FPV (First Person View).
+                                    To NIE JEST symulacja jazdy samochodem, ani lotu Boeingiem.
+                                    
+                                    DANE DO ANALIZY:
+                                    - Poziom ucznia: {st.session_state.skill_select}.
+                                    - Typ lotu drona FPV: {st.session_state.industry_select}.
+                                    - Wskaźnik szarpnięć (Jerk): {stats['jr']:.2f}.
+                                    
+                                    Wymagania: Zwróć uwagę na specyfikę lotu dronem wyścigowym/freestyle.
+                                    Zwróć TYLKO czysty obiekt JSON bez znaczników markdown: {{"ocena": 1-10, "diagnoza": "Inżynieryjny i techniczny tekst oceniający drążki", "zadanie": "Ćwiczenie FPV"}}
                                     """
                                     raw_ai = generate_intel(prompt)
                                     try:
                                         js = json.loads(raw_ai.replace("```json","").replace("```","").strip())
-                                        tag = "PREMIUM" if cost == 2 else "BASIC"
-                                        txt = f"### {tag} DEBRIEF\n**SCORE:** {js['ocena']}/10\n\n**DIAGNOSIS:**\n{js['diagnoza']}\n\n**DIRECTIVE:**\n{js['zadanie']}"
+                                        tag = "PREMIUM" if cost == 2 else "PODSTAWOWY"
+                                        txt = f"### ODPRAWA {tag}\n**OCENA:** {js['ocena']}/10\n\n**DIAGNOZA:**\n{js['diagnoza']}\n\n**ZADANIE NA NASTĘPNY LOT:**\n{js['zadanie']}"
                                         
                                         history = user_data.get('zadania', [])
                                         history.append({
@@ -426,18 +455,18 @@ else:
                                             "tokeny": user_data['tokeny'] - cost
                                         }).eq('email', user_data['email']).execute()
                                         
-                                        status.update(label="Analysis Complete", state="complete", expanded=False)
+                                        status.update(label="Analiza Zakończona", state="complete", expanded=False)
                                         time.sleep(1)
                                         st.rerun()
-                                    except: st.error("AI Payload Corrupted.")
-                    else: st.error("INSUFFICIENT FUNDS.")
+                                    except: st.error("Uszkodzenie pakietu danych AI. Spróbuj ponownie.")
+                    else: st.error("BRAK WYSTARCZAJĄCYCH ŚRODKÓW NA KONCIE (TOKENÓW).")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<br><p class='mono-text'>ARCHIVE</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>ARCHIWUM MISJI</p>", unsafe_allow_html=True)
         for z in reversed(user_data.get('zadania', [])):
             if isinstance(z, dict):
                 icon = "💎" if z.get('premium') else "📄"
-                with st.expander(f"{icon} {z.get('data')} | {z.get('type','Op')} | SCORE: {z.get('ocena')}/10"):
+                with st.expander(f"{icon} {z.get('data')} | {z.get('type','Op')} | OCENA: {z.get('ocena')}/10"):
                     st.markdown(z.get('raport'))
             else:
-                with st.expander("LEGACY RECORD"): st.markdown(str(z))
+                with st.expander("STARE ZAPISY"): st.markdown(str(z))
