@@ -19,7 +19,7 @@ from plotly.subplots import make_subplots
 # ==========================================
 # 1. KONFIGURACJA SESJI
 # ==========================================
-st.set_page_config(page_title="FPV AI Academy", page_icon="🚁", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="FPV AI Academy", page_icon="🛩️", layout="wide", initial_sidebar_state="expanded")
 
 def init_session():
     defaults = {
@@ -33,63 +33,127 @@ def init_session():
 init_session()
 
 # ==========================================
-# 2. MODERN PREMIUM UI (CSS)
+# 2. MODERN PREMIUM UI (CSS & Glassmorphism)
 # ==========================================
 accent = st.session_state.theme_color
 
+# Dodajemy nowoczesne efekty wizualne
 st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     
-    /* Modern Slate Theme */
-    .stApp {{ background-color: #0F172A; color: #F8FAFC; font-family: 'Inter', sans-serif; }}
+    /* Globalne Tło - bardzo ciemny, głęboki granat z subtelnym gradientem */
+    .stApp {{ 
+        background: radial-gradient(circle at top, #111827, #030712); 
+        color: #F8FAFC; 
+        font-family: 'Inter', sans-serif; 
+    }}
     
-    /* Eleganckie karty (Bento Box) */
+    /* Eleganckie karty z efektem Glassmorphism (szkła) */
     .bento-card {{
-        background: #1E293B; border: 1px solid #334155; border-radius: 16px;
-        padding: 24px; transition: all 0.3s ease; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background: rgba(30, 41, 59, 0.4); 
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08); 
+        border-radius: 24px;
+        padding: 30px; 
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
     }}
-    .bento-card:hover {{ border-color: {accent}; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); transform: translateY(-2px); }}
+    .bento-card:hover {{ 
+        border-color: {accent}80; 
+        box-shadow: 0 20px 40px -10px {accent}40; 
+        transform: translateY(-4px); 
+    }}
     
-    /* Typografia */
-    h1, h2, h3, h4 {{ font-weight: 700 !important; color: #FFFFFF !important; }}
-    .mono-text {{ font-family: 'Inter', sans-serif; color: #94A3B8; font-size: 0.85em; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }}
+    /* Typografia i nagłówki z gradientem */
+    h1, h2, h3, h4 {{ font-weight: 800 !important; color: #FFFFFF !important; letter-spacing: -0.5px; }}
+    .mono-text {{ 
+        font-family: 'Inter', sans-serif; 
+        color: #94A3B8; 
+        font-size: 0.8rem; 
+        text-transform: uppercase; 
+        font-weight: 700; 
+        letter-spacing: 0.1em; 
+    }}
     
-    /* Metryki i dane */
+    /* Nowoczesne Metryki */
     div[data-testid="stMetric"] {{
-        background: #1E293B; border: 1px solid #334155; border-radius: 12px; padding: 20px;
+        background: rgba(30, 41, 59, 0.4); 
+        border: 1px solid rgba(255, 255, 255, 0.05); 
+        border-radius: 16px; 
+        padding: 24px;
+        box-shadow: inset 0 2px 4px 0 rgba(255, 255, 255, 0.02);
     }}
-    div[data-testid="stMetricValue"] {{ font-weight: 700; color: {accent}; }}
+    div[data-testid="stMetricValue"] {{ font-weight: 800; color: {accent}; font-size: 2.2rem; }}
     
-    /* Przyciski standardowe */
+    /* Standardowe Przyciski */
     .stButton>button {{
-        background: #1E293B; border: 1px solid #475569; color: #F8FAFC; border-radius: 8px;
-        font-weight: 500; transition: 0.2s;
+        background: rgba(30, 41, 59, 0.6); 
+        border: 1px solid rgba(255,255,255,0.1); 
+        color: #E2E8F0; 
+        border-radius: 12px;
+        font-weight: 600; 
+        padding: 0.5rem 1rem;
+        transition: all 0.3s ease;
     }}
-    .stButton>button:hover {{ background: #334155; color: #FFFFFF; border-color: #94A3B8; }}
+    .stButton>button:hover {{ 
+        background: rgba(255,255,255,0.1); 
+        color: #FFFFFF; 
+        border-color: {accent}; 
+    }}
     
-    /* Przycisk Głównego Działania (CTA) */
-    .cta-btn>button {{ background: {accent}; color: #FFFFFF; border: none; font-weight: 600; box-shadow: 0 4px 14px 0 {accent}40; }}
-    .cta-btn>button:hover {{ background: {accent}EE; box-shadow: 0 6px 20px rgba(0,0,0,0.23); }}
+    /* Główny przycisk akcji (Glow effect) */
+    .cta-btn>button {{ 
+        background: linear-gradient(135deg, {accent}, #6366F1); 
+        color: #FFFFFF; 
+        border: none; 
+        font-weight: 700; 
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 20px 0 {accent}60; 
+        border-radius: 12px;
+        padding: 0.75rem 1.5rem;
+    }}
+    .cta-btn>button:hover {{ 
+        box-shadow: 0 8px 30px rgba(99, 102, 241, 0.6); 
+        transform: scale(1.02);
+    }}
     
-    /* Pola tekstowe */
-    .stTextInput input, .stTextArea textarea, .stNumberInput input {{ background: #0F172A !important; border: 1px solid #334155 !important; color: #F8FAFC !important; border-radius: 8px !important; }}
-    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {{ border-color: {accent} !important; box-shadow: 0 0 0 1px {accent} !important; }}
+    /* Pola wprowadzania danych */
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {{ 
+        background: rgba(15, 23, 42, 0.6) !important; 
+        border: 1px solid rgba(255,255,255,0.1) !important; 
+        color: #F8FAFC !important; 
+        border-radius: 12px !important; 
+        padding: 10px 15px !important;
+    }}
+    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {{ 
+        border-color: {accent} !important; 
+        box-shadow: 0 0 0 2px {accent}40 !important; 
+    }}
     
-    /* Panel boczny */
-    section[data-testid="stSidebar"] {{ background-color: #0B0F19 !important; border-right: 1px solid #1E293B; }}
-    
-    /* Ukrycie elementów Streamlit */
+    /* Panele, menu i ukrycie brandingu Streamlit */
+    section[data-testid="stSidebar"] {{ background-color: rgba(3, 7, 18, 0.8) !important; border-right: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(10px); }}
     #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
     </style>
     """, unsafe_allow_html=True)
 
-# GŁÓWNE LOGO PLATFORMY
+# NOWE WŁASNE LOGO WEKTOROWE
 def render_logo():
-    st.markdown("""
-        <div style='text-align: center; padding-bottom: 2rem;'>
-            <h1 style='font-size: 2.5rem; margin-bottom: 0;'><span style='color: #3B82F6;'>🚁 FPV</span> AI Academy</h1>
-            <p style='color: #94A3B8; font-size: 1.1rem; margin-top: 0.5rem;'>Inteligentna platforma analityczna dla pilotów</p>
+    # Profesjonalne wektorowe logo drona w formacie SVG
+    svg_logo = f"""
+    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01" stroke="{accent}" stroke-width="3" stroke-linecap="round"/>
+      <path d="M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5" stroke="#94A3B8" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="12" cy="12" r="3" fill="#1E293B" stroke="{accent}" stroke-width="2"/>
+    </svg>
+    """
+    st.markdown(f"""
+        <div style='text-align: center; padding-bottom: 3rem; display: flex; flex-direction: column; align-items: center;'>
+            {svg_logo}
+            <h1 style='font-size: 3rem; margin-bottom: 0; margin-top: 10px; background: linear-gradient(90deg, #FFFFFF, #94A3B8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
+                FPV AI Academy
+            </h1>
+            <p style='color: #64748B; font-size: 1.1rem; margin-top: 0.5rem; font-weight: 500; letter-spacing: 1px;'>NEXT-GEN FLIGHT ANALYTICS</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -164,7 +228,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
         with t2:
             fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
                                 mode='lines', line=dict(color=pdf[thr], colorscale='Blues', width=5))])
-            fig3.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', scene=dict(bgcolor='#0F172A'))
+            fig3.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', scene=dict(bgcolor='rgba(15, 23, 42, 0)'))
             st.plotly_chart(fig3, use_container_width=True)
             
         with t3:
@@ -204,7 +268,6 @@ if st.session_state.auth_user is None:
             st.markdown("</div>", unsafe_allow_html=True)
         with t2:
             rem = st.text_input("Nowy Email")
-            # NAPRAWA: Dodano parametr key="reg_pass", aby Streamlit nie mylił tego pola z hasłem z pierwszej zakładki
             rpw = st.text_input("Hasło", type="password", key="reg_pass")
             rnm = st.text_input("Imię i Nazwisko / Pseudonim")
             if st.button("Zarejestruj się"):
@@ -213,10 +276,8 @@ if st.session_state.auth_user is None:
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-# Pobieranie danych użytkownika
 user_data = supabase.table('konta').select('*').eq('email', st.session_state.auth_user).execute().data[0]
 
-# Funkcja do renderowania statystyk z historii
 def render_history_stats(stats_dict):
     st.markdown("<p class='mono-text' style='margin-top: 15px;'>ZAPISANE PARAMETRY LOTU</p>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
@@ -239,11 +300,9 @@ if user_data['rola'] == "Instruktor":
         selected_email = st.radio("Wybierz kursanta:", [k['email'] for k in cadets], label_visibility="collapsed")
         target_data = next(k for k in cadets if k['email'] == selected_email)
         
-        # Zarządzanie tokenami
         st.markdown(f"<br><p class='mono-text'>PORTFEL KURSANTA: <span style='color: {accent}; font-weight: bold;'>{target_data.get('tokeny', 0)} Tokenów</span></p>", unsafe_allow_html=True)
         col_t1, col_t2 = st.columns([2, 1])
-        with col_t1:
-            dodaj_tok = st.number_input("Dodaj", min_value=1, max_value=100, value=5, label_visibility="collapsed")
+        with col_t1: dodaj_tok = st.number_input("Dodaj", min_value=1, max_value=100, value=5, label_visibility="collapsed")
         with col_t2:
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("DODAJ"):
@@ -294,24 +353,27 @@ if user_data['rola'] == "Instruktor":
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("GENERUJ OPINIĘ AI"):
                 if init_ai():
+                    # ZAAWANSOWANY PROMPT INSTRUKTORSKI
                     prompt = f"""
-                    Jesteś doświadczonym, empatycznym instruktorem dronów FPV (First Person View).
-                    Analizujesz logi z lotu swojego ucznia. To jest DRON FPV (nie samochód, nie samolot pasażerski).
+                    Jesteś elitarnym, empatycznym instruktorem dronów FPV. Analizujesz lot kursanta.
+                    Poziom umiejętności: {inst_skill}. Styl lotu: {inst_ind}.
                     
-                    Kontekst ucznia:
-                    - Poziom umiejętności: {inst_skill}.
-                    - Styl lotu: {inst_ind}.
+                    ZASADY KOMUNIKACJI WEDŁUG POZIOMU:
+                    - Początkujący: Skup się na podstawach, trzymaniu wysokości, płynnych ruchach. Unikaj trudnego żargonu, chwal za drobne sukcesy.
+                    - Średniozaawansowany: Wprowadzaj pojęcia takie jak 'throttle management', 'proporcje roll/pitch'. Analizuj dokładniej płynność zakrętów.
+                    - Ekspert: Oczekuj perfekcji. Używaj profesjonalnego żargonu (propwash, rates, PID tuning, micro-adjustments, feedforward). Bądź bardzo surowy w ocenie płynności drążków.
                     
-                    Dane z czarnej skrzynki:
-                    - Szarpnięcia drążków (Jerk): {stats['jr']:.2f} (niższy wynik to płynniejszy lot).
-                    - Wibracje na silnikach / kondycja: {stats['health']}%.
+                    DANE TELEMETRYCZNE:
+                    - Płynność drążków (Jerk): {stats['jr']:.2f} (wynik bliżej 0-2 to lot bardzo płynny, powyżej 4 to nerwowy/szarpany).
+                    - Wibracje i stabilność (Kondycja): {stats['health']}%.
                     
-                    Twoje zadanie:
-                    1. Oceń lot w skali 1-10.
-                    2. Napisz "diagnozę". Mów jak człowiek do człowieka (np. "Cześć! Widzę, że świetnie radzisz sobie z... ale popracuj nad..."). Używaj przyjaznego tonu instruktora FPV.
-                    3. Zaproponuj JEDNO realne, praktyczne zadanie treningowe z drona FPV na następny lot (np. "Wylataj dwa pakiety robiąc gładkie Power Loopy" lub "Zrób 5 okrążeń wokół drzewa ćwicząc stałą wysokość").
+                    Twoje zadanie to wygenerowanie oceny, komentarza i zadania domowego w formacie JSON.
+                    1. Oceń lot (1-10). Bądź obiektywny względem poziomu zaawansowania.
+                    2. Stwórz diagnozę dostosowaną językowo do poziomu ({inst_skill}). Wskaż na podstawie danych z Jerk i Kondycji, co kursant robi dobrze, a co musi poprawić.
+                    3. Zaproponuj JEDNO precyzyjne ćwiczenie na następny trening z użyciem gogli FPV.
                     
-                    Zwróć TYLKO czysty JSON: {{"ocena": 8, "diagnoza": "Twój komentarz", "zadanie": "Ćwiczenie"}}
+                    Zwróć TYLKO czysty obiekt JSON:
+                    {{"ocena": 8, "diagnoza": "Cześć! Super lot, jednak...", "zadanie": "Następnym razem zrób..."}}
                     """
                     raw = generate_intel(prompt)
                     try:
@@ -323,7 +385,7 @@ if user_data['rola'] == "Instruktor":
 
         if st.session_state.instructor_draft:
             st.markdown("<p class='mono-text'>TWÓJ KOMENTARZ (DO EDYCJI)</p>", unsafe_allow_html=True)
-            final_rep = st.text_area("Możesz dowolnie zmienić ten tekst przed wysłaniem:", value=st.session_state.instructor_draft, height=250, label_visibility="collapsed")
+            final_rep = st.text_area("Możesz edytować ten tekst przed wysłaniem:", value=st.session_state.instructor_draft, height=250, label_visibility="collapsed")
             
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("WYŚLIJ RAPORT DO KURSANTA"):
@@ -334,7 +396,7 @@ if user_data['rola'] == "Instruktor":
                     "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "ocena": score, "raport": final_rep, "wideo": vid_link, 
                     "type": inst_ind, "premium": True,
-                    "stats": st.session_state.temp_metrics  # ZAPISUJEMY STATYSTYKI DO HISTORII!
+                    "stats": st.session_state.temp_metrics
                 }
                 history = target_data.get('zadania', [])
                 history.append(new_record)
@@ -430,19 +492,27 @@ else:
                                 
                                 st.write("Opracowywanie raportu przez instruktora AI...")
                                 if init_ai():
+                                    # ZAAWANSOWANY PROMPT KURSANT
                                     prompt = f"""
-                                    Jesteś doświadczonym, empatycznym instruktorem dronów FPV. Twój kursant to {user_data['imie']}.
+                                    Jesteś elitarnym trenerem dronów FPV. Przeprowadzasz analizę automatyczną dla kursanta: {user_data['imie']}.
                                     Poziom ucznia: {st.session_state.skill_select}. Styl lotu: {st.session_state.industry_select}.
                                     
-                                    Dane z czarnej skrzynki DRONA FPV (to nie jazda autem!):
-                                    - Płynność (Jerk): {stats['jr']:.2f}.
+                                    WYTYCZNE ZALEŻNE OD POZIOMU:
+                                    - Początkujący: Motywuj i chwal za odwagę. Skup się na gładkim poruszaniu prawym drążkiem (pitch/roll). Używaj języka łatwego do przyswojenia.
+                                    - Średniozaawansowany: Analizuj "throttle management" (kontrolę gazu) i zjawisko szarpania. Wskaż, że gładkie ruchy = lepsze wideo.
+                                    - Ekspert: Zero litości. Wejdź głęboko w detale mikrokorekt drążków i zjawiska "propwash". Wymagaj pełnej integracji człowieka z maszyną.
+
+                                    DANE Z CZARNEJ SKRZYNKI:
+                                    - Płynność drążków (Jerk): {stats['jr']:.2f} (optymalnie poniżej 2).
+                                    - Kondycja / stabilność lotu: {stats['health']}%.
                                     
-                                    Twoje zadanie:
-                                    1. Oceń lot (1-10).
-                                    2. Diagnoza: Przywitaj się, pochwal go za postępy, powiedz co zrobił dobrze, a nad czym musi popracować w locie FPV. Używaj przyjaznego, naturalnego języka.
-                                    3. Zadanie: Zaproponuj JEDNO realne ćwiczenie (np. "Wylataj dwa pakiety wokół tego samego drzewa").
+                                    WYMAGANY WYNIK - Czysty JSON:
+                                    1. "ocena": Oceń lot 1-10 stosownie do wybranego poziomu.
+                                    2. "diagnoza": Wyjaśnij kursantowi, co oznacza jego wskaźnik "Jerk" ({stats['jr']:.2f}) w praktyce i co musi zmienić w obsłudze aparatury.
+                                    3. "zadanie": Daj JEDNO wysoce precyzyjne ćwiczenie na kolejny lot FPV (np. 'Lataj ósemki z zablokowaną kamerą pod kątem 30 stopni').
                                     
-                                    Zwróć TYLKO czysty JSON: {{"ocena": 8, "diagnoza": "Cześć! Super lot...", "zadanie": "Następnym razem..."}}
+                                    Zwróć TYLKO czysty obiekt JSON:
+                                    {{"ocena": 8, "diagnoza": "Cześć! Super lot...", "zadanie": "Następnym razem..."}}
                                     """
                                     raw_ai = generate_intel(prompt)
                                     try:
@@ -457,7 +527,7 @@ else:
                                             "raport": txt, 
                                             "type": st.session_state.industry_select, 
                                             "premium": (cost==2),
-                                            "stats": stats # ZAPISUJEMY WYNIKI NUMERYCZNE DLA WYKRESÓW W HISTORII!
+                                            "stats": stats
                                         })
                                         
                                         supabase.table('konta').update({
@@ -478,7 +548,6 @@ else:
                 icon = "💎" if z.get('premium') else "📄"
                 with st.expander(f"{icon} {z.get('data')} | {z.get('type','Lot')} | Ocena: {z.get('ocena')}/10"):
                     st.markdown(z.get('raport'))
-                    # Jeśli raport ma zapisane statystyki (np. był Premium) - wyświetlamy je!
                     if 'stats' in z and z.get('premium'):
                         render_history_stats(z['stats'])
             else:
