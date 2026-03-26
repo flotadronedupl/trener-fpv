@@ -23,7 +23,7 @@ st.set_page_config(page_title="FPV AI Academy", page_icon="🚁", layout="wide",
 
 # GŁÓWNY KOLOR PREMIUM (Wyścigowa, głęboka zieleń)
 PRIMARY_COLOR = "#336600"
-ACCENT_LIGHT = "#4d9900" # Jaśniejsza zieleń do gradientów i poświaty
+ACCENT_LIGHT = "#4d9900" 
 
 def init_session():
     defaults = {
@@ -37,7 +37,7 @@ def init_session():
 init_session()
 
 # ==========================================
-# 2. MODERN PREMIUM UI (CSS & Dark Forest/Glass Theme)
+# 2. MODERN PREMIUM UI (CSS)
 # ==========================================
 st.markdown(f"""
     <style>
@@ -164,7 +164,6 @@ def render_terminal_hud(df, mode="Real", premium=False):
         acc_z = [c for c in df.columns if 'accSmooth[2]' in c]
         has_acc = bool(acc_x and acc_y and acc_z)
         
-        gyro_r = [c for c in df.columns if 'gyroADC[0]' in c]
     except:
         st.error("Nie znaleziono podstawowych danych telemetrycznych w przesłanym logu.")
         return None
@@ -199,7 +198,6 @@ def render_terminal_hud(df, mode="Real", premium=False):
         with t1:
             st.markdown("<p style='color: #8cbf8c; font-size: 0.9em;'>Analiza pracy aparaturą. Agresywne skoki oznaczają nerwowe ruchy pilota.</p>", unsafe_allow_html=True)
             fig = go.Figure()
-            # NAPRAWIONY BŁĄD PLOTLY: fill='tozeroy' jest teraz argumentem go.Scatter, a nie elementem słownika line
             fig.add_trace(go.Scatter(y=pdf[thr], name="Gaz (Throttle)", line=dict(color='#2f3b2f', width=2), fill='tozeroy'))
             fig.add_trace(go.Scatter(y=pdf[roll], name="Roll", line=dict(color=ACCENT_LIGHT, width=2)))
             if yaw: fig.add_trace(go.Scatter(y=pdf[yaw], name="Yaw", line=dict(color='#FFFFFF', width=1, dash='dot')))
@@ -228,18 +226,30 @@ def render_terminal_hud(df, mode="Real", premium=False):
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
             mot_cols = [c for c in df.columns if 'motor[' in c.lower() or 'motor0' in c.lower()]
             
+            has_data = False
+            
+            # 1. Wykres Silników (jeśli są dane)
             if mot_cols and len(mot_cols) >= 4:
+                has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
-            elif v_col and mode == "Real":
-                f_bat = go.Figure()
-                f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color=ACCENT_LIGHT, width=3)))
-                f_bat.update_layout(title="Spadek napięcia baterii", template="plotly_dark", height=250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+            
+            # 2. Wykres Baterii (jeśli są dane z lotu rzeczywistego)
+            if v_col and mode == "Real":
+                has_data = True
+                f_bat = make_subplots(specs=[[{"secondary_y": True}]])
+                # Linia baterii
+                f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
+                # Tło gazu
+                f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz (Throttle)", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
+                
+                f_bat.update_layout(title="Spadek napięcia baterii a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
-            else:
-                st.info("Brak wystarczających danych o napędzie w logu symulatora.")
+                
+            if not has_data:
+                st.info("Brak wystarczających danych o napędzie i zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
