@@ -213,9 +213,10 @@ if user_data['rola'] == "Instruktor":
         if st.button("🏠 RESET CONSOLE"): st.session_state.draft = None; st.rerun()
         if st.button("🚪 SEVER CONNECTION"): st.session_state.zalogowany = None; st.rerun()
 
-    # Get all students
     wszyscy = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
-    if nie wszyscy: st.warning("NO CADETS IN DATABASE."); st.stop()
+    if not wszyscy: 
+        st.warning("NO CADETS IN DATABASE.")
+        st.stop()
     
     wybrany_em = st.selectbox("SELECT CADET TO DEBRIEF:", [k['email'] for k in wszyscy])
     k_data = next(k for k in wszyscy if k['email'] == wybrany_em)
@@ -255,13 +256,13 @@ if user_data['rola'] == "Instruktor":
             if init_ai():
                 p = f"""System FPV. Operator: {k_data.get('level', 'Pilot')}. Misja: {m_type}. 
                 Roll Jerk: {stats['jr']:.2f}, Pitch: {stats['jp']:.2f}, Health: {stats['health']}%.
-                Zwróć JSON: {{'ocena': 1-10, 'diagnoza': 'Krótko wojskowym żargonem', 'zadanie': 'Konkret'}}"""
+                Zwróć TYLKO czysty format JSON bez dodatkowego tekstu ani markdown: {{"ocena": 1-10, "diagnoza": "Krótko wojskowym żargonem", "zadanie": "Konkret"}}"""
                 raw = get_ai_intel(p)
                 try:
                     js = json.loads(raw.replace("```json","").replace("```","").strip())
                     st.session_state.draft = f"### MISSION RATING: {js['ocena']}/10 [{m_type}]\n\n**TACTICAL DIAGNOSIS:**\n{js['diagnoza']}\n\n**NEW DIRECTIVE:**\n{js['zadanie']}"
                     st.session_state.temp_stats = stats
-                except: st.error("AI DATA CORRUPTION.")
+                except: st.error("AI DATA CORRUPTION. PROSZĘ SPRÓBOWAĆ PONOWNIE.")
 
     if st.session_state.draft:
         st.divider()
@@ -354,7 +355,7 @@ else:
                             stats = render_tactical_hud(df, mode=is_real, mission=st.session_state.mission_type, premium=(koszt==2))
                             
                             if init_ai():
-                                raw_ai = get_ai_intel(f"Pilot: {user_data['imie']} ({user_data.get('level','Cadet')}). Misja: {st.session_state.mission_type}. Jerk: {stats['jr']:.2f}. Return JSON.")
+                                raw_ai = get_ai_intel(f"Pilot: {user_data['imie']} ({user_data.get('level','Cadet')}). Misja: {st.session_state.mission_type}. Jerk: {stats['jr']:.2f}. Zwróć TYLKO czysty obiekt JSON bez znaczników markdown: {{\"ocena\": 1-10, \"diagnoza\": \"Tekst\", \"zadanie\": \"Zadanie\"}}")
                                 try:
                                     js = json.loads(raw_ai.replace("```json","").replace("```","").strip())
                                     tag = "💎 PREMIUM" if koszt == 2 else "📄 BASIC"
@@ -364,7 +365,7 @@ else:
                                     zads.append({"data": datetime.now().strftime("%Y-%m-%d"), "ocena": js['ocena'], "raport": txt, "type": st.session_state.mission_type, "premium": (koszt==2)})
                                     supabase.table('konta').update({"zadania": zads, "tokeny": user_data['tokeny']-koszt}).eq('email', user_data['email']).execute()
                                     st.rerun()
-                                except: st.error("AI FORMAT ERROR")
+                                except: st.error("AI DATA CORRUPTION. PROSZĘ SPRÓBOWAĆ PONOWNIE.")
                 else: st.error("INSUFFICIENT TOKENS. CONTACT COMMAND.")
 
     st.subheader("📋 PERSONAL MISSION ARCHIVE")
