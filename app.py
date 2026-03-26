@@ -97,7 +97,7 @@ def get_ai_intel(prompt):
         best = next((m for m in models if '1.5-flash' in m), models[0])
         return genai.GenerativeModel(best).generate_content(prompt).text
     except Exception as e:
-        return f'{{"ocena": 0, "diagnoza": "AI COMMS LINK LOST: {str(e)}", "zadanie": "RECALIBRATE"}}'
+        return f'{{"ocena": 0, "diagnoza": "AI COMMS LINK LOST", "zadanie": "RECALIBRATE"}}'
 
 @st.cache_resource
 def get_decoder():
@@ -226,13 +226,17 @@ if user_data['rola'] == "Instruktor":
     st.sidebar.write(f"**RANK:** {k_data.get('level', 'Unknown')}")
     m_type = st.sidebar.selectbox("SET MISSION TYPE:", ["Military/Recon", "Pro-Racing", "Freestyle"])
     
-    # Zmiana motywu dla Instruktora
     st.session_state.theme_color = '#00ff66' if 'Military' in m_type else '#ff4400' if 'Racing' in m_type else '#00ccff'
 
+    # WSPARCIE DLA STARYCH DANYCH (LEGACY SAFEGUARD)
     with st.expander(f"📜 DOSSIER: {k_data['imie']}", expanded=False):
         for z in reversed(k_data.get('zadania', [])):
-            st.write(f"**{z.get('data')} | SCORE: {z.get('ocena')}/10 | {z.get('type','N/A')}**")
-            st.caption(z.get('raport')[:150] + "...")
+            if isinstance(z, dict):
+                st.write(f"**{z.get('data')} | SCORE: {z.get('ocena')}/10 | {z.get('type','N/A')}**")
+                st.caption(z.get('raport')[:150] + "...")
+            else:
+                st.write("**ARCHIVE LOG (LEGACY)**")
+                st.caption(str(z)[:100] + "...")
             st.divider()
 
     c1, c2 = st.columns(2)
@@ -293,7 +297,7 @@ else:
         if st.button("🚪 DISCONNECT"): st.session_state.zalogowany = None; st.rerun()
 
     if st.session_state.app_mode == "menu":
-        st.session_state.theme_color = '#00ff66' # Default dla menu
+        st.session_state.theme_color = '#00ff66' 
         st.title("🚀 MISSION LAUNCHPAD")
         
         c1, c2 = st.columns(2)
@@ -308,16 +312,17 @@ else:
             if st.button("ENTER SIMULATOR", use_container_width=True): 
                 st.session_state.mission_type="Simulator"; st.session_state.theme_color="#b026ff"; st.session_state.app_mode="sim"; st.rerun()
         
-        # GLOBAL LEADERBOARD "TOP GUN"
+        # GLOBAL LEADERBOARD "TOP GUN" (LEGACY SAFEGUARD)
         st.divider()
         st.subheader("🏆 GLOBAL TOP GUN LEADERBOARD")
         wszyscy = supabase.table('konta').select('imie, zadania').eq('rola', 'Kursant').execute().data
         ranking = []
         for k in wszyscy:
             zads = k.get('zadania', [])
-            if len(zads) > 0:
-                avg_score = sum([z['ocena'] for z in zads if isinstance(z, dict) and 'ocena' in z]) / len(zads)
-                ranking.append({"Name": k['imie'], "Avg Score": round(avg_score, 1), "Missions": len(zads)})
+            valid_zads = [z for z in zads if isinstance(z, dict) and 'ocena' in z]
+            if len(valid_zads) > 0:
+                avg_score = sum([z['ocena'] for z in valid_zads]) / len(valid_zads)
+                ranking.append({"Name": k['imie'], "Avg Score": round(avg_score, 1), "Missions": len(valid_zads)})
         
         if ranking:
             df_rank = pd.DataFrame(ranking).sort_values(by="Avg Score", ascending=False).reset_index(drop=True)
@@ -375,3 +380,6 @@ else:
             with st.expander(f"{ico} {z.get('data')} | {z.get('type','Op')} | SCORE: {z.get('ocena')}/10"):
                 st.markdown(z.get('raport'))
                 if z.get('wideo'): st.video(z.get('wideo'))
+        else:
+            with st.expander(f"📄 LEGACY MISSION LOG"):
+                st.markdown(str(z))
