@@ -41,7 +41,7 @@ st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
-    /* Modern Slate Theme (Przyjemny, głęboki granat/szary) */
+    /* Modern Slate Theme */
     .stApp {{ background-color: #0F172A; color: #F8FAFC; font-family: 'Inter', sans-serif; }}
     
     /* Eleganckie karty (Bento Box) */
@@ -204,7 +204,8 @@ if st.session_state.auth_user is None:
             st.markdown("</div>", unsafe_allow_html=True)
         with t2:
             rem = st.text_input("Nowy Email")
-            rpw = st.text_input("Hasło", type="password")
+            # NAPRAWA: Dodano parametr key="reg_pass", aby Streamlit nie mylił tego pola z hasłem z pierwszej zakładki
+            rpw = st.text_input("Hasło", type="password", key="reg_pass")
             rnm = st.text_input("Imię i Nazwisko / Pseudonim")
             if st.button("Zarejestruj się"):
                 supabase.table('konta').insert({'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 'tokeny': 10, 'zadania': []}).execute()
