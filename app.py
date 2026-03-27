@@ -250,7 +250,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
             
             if v_col and mode == "Real":
@@ -258,10 +258,10 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
-                f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+                f_bat.update_layout(title="Spadek napięcia a gaz", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
                 
-            if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
+            if not has_data: st.info("Brak danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
@@ -279,23 +279,42 @@ if st.session_state.auth_user is None:
             pw = st.text_input("Hasło", type="password")
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("Zaloguj się do panelu"):
-                res = supabase.table('konta').select('*').eq('email', em).execute()
-                if res.data and res.data[0]['haslo'] == pw:
-                    
-                    # LOGIKA BLOKUJĄCA (Jeśli is_verified jest równy False, to blokujemy. Brak pola = stare konto, wpuszczamy)
-                    is_verified = res.data[0].get('zweryfikowany')
-                    
-                    if em.lower() == 'admin@fpv.pl':
-                        is_verified = True # Konto główne (Root) ma zawsze weryfikację
-                        
-                    # Twarda blokada! Wpuszcza tylko jeśli is_verified nie jest ściśle równe False
-                    if is_verified is False:
-                        st.error("⚠️ Twoje konto oczekuje na weryfikację. Skontaktuj się z Administratorem.")
-                    else:
+                if em.lower() == 'admin@fpv.pl':
+                    res = supabase.table('konta').select('*').eq('email', em).execute()
+                    if res.data and res.data[0]['haslo'] == pw:
                         st.session_state.auth_user = em
                         st.session_state.role = res.data[0]['rola']
                         st.rerun()
-                else: st.error("Nieprawidłowy adres e-mail lub hasło.")
+                    else: st.error("Nieprawidłowe hasło administratora.")
+                else:
+                    try:
+                        # LOGOWANIE PRZEZ SUPABASE AUTH (Wymusza sprawdzenie maila)
+                        res_auth = supabase.auth.sign_in_with_password({"email": em, "password": pw})
+                        
+                        # Jeśli brak błędów - weryfikacja była pomyślna.
+                        supabase.table('konta').update({"zweryfikowany": True}).eq('email', em).execute()
+                        
+                        res = supabase.table('konta').select('*').eq('email', em).execute()
+                        st.session_state.auth_user = em
+                        st.session_state.role = res.data[0]['rola']
+                        st.rerun()
+                    except Exception as e:
+                        err_msg = str(e).lower()
+                        # Fallback jeśli błąd to tylko niezweryfikowany e-mail
+                        if "email not confirmed" in err_msg or "unverified" in err_msg or "not verified" in err_msg:
+                            st.error("⚠️ Twój adres e-mail nie został jeszcze zweryfikowany! Sprawdź skrzynkę pocztową i kliknij w link aktywacyjny (lub poproś Admina o ręczną aktywację).")
+                        else:
+                            # Ostateczny fallback do naszej bazy, jeśli ktoś nie ma jeszcze konta w Auth, ale istnieje w tabeli (Stare konta)
+                            res = supabase.table('konta').select('*').eq('email', em).execute()
+                            if res.data and res.data[0]['haslo'] == pw:
+                                if res.data[0].get('zweryfikowany') is True:
+                                    st.session_state.auth_user = em
+                                    st.session_state.role = res.data[0]['rola']
+                                    st.rerun()
+                                else:
+                                    st.error("⚠️ Twoje konto oczekuje na weryfikację. Sprawdź e-mail lub skontaktuj się z Administratorem.")
+                            else:
+                                st.error("Nieprawidłowy adres e-mail lub hasło.")
             st.markdown("</div>", unsafe_allow_html=True)
             
         with t2:
@@ -311,12 +330,22 @@ if st.session_state.auth_user is None:
                     if not is_valid:
                         st.error(msg)
                     else:
-                        # TWARDE PRZYPISANIE 'zweryfikowany': False do nowej kolumny
-                        supabase.table('konta').insert({
-                            'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
-                            'tokeny': 10, 'zadania': [], 'zweryfikowany': False
-                        }).execute()
-                        st.success("Konto założone pomyślnie! Oczekuj na weryfikację przez Administratora.")
+                        try:
+                            # 1. TWORZENIE KONTA W AUTH (Wysyła maila)
+                            supabase.auth.sign_up({
+                                "email": rem,
+                                "password": rpw
+                            })
+                            
+                            # 2. ZAPIS DO NASZEJ TABELI Z FLAGĄ FALSE
+                            supabase.table('konta').insert({
+                                'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
+                                'tokeny': 10, 'zadania': [], 'zweryfikowany': False
+                            }).execute()
+                            
+                            st.success("Konto założone pomyślnie! Sprawdź swoją skrzynkę e-mail i kliknij link weryfikacyjny (sprawdź też folder SPAM).")
+                        except Exception as e:
+                            st.error(f"Wystąpił problem z systemem rejestracji: Sprawdź ustawienia bazy. Szczegóły: {e}")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -353,7 +382,7 @@ if is_instructor:
             
         if not cadets: st.warning("Brak użytkowników w bazie danych."); st.stop()
         
-        display_names = [f"✅ {k['email']}" if k.get('zweryfikowany') is not False else f"❌ {k['email']}" for k in cadets]
+        display_names = [f"✅ {k['email']}" if k.get('zweryfikowany', True) is True else f"❌ {k['email']}" for k in cadets]
         selected_display = st.radio("Wybierz użytkownika:", display_names, label_visibility="collapsed")
         
         selected_email = selected_display[2:] 
