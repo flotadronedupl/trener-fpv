@@ -82,7 +82,6 @@ st.markdown(f"""
     section[data-testid="stSidebar"] {{ background-color: rgba(5, 10, 5, 0.95) !important; border-right: 1px solid rgba(51,102,0,0.2); backdrop-filter: blur(20px); }}
     #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
     
-    /* Dodatkowe style dla przycisku usuwania konta */
     .danger-btn>button {{ border: 1px solid #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.1); }}
     .danger-btn>button:hover {{ background: #ef4444; color: #ffffff; }}
     </style>
@@ -154,14 +153,13 @@ def init_ai():
         return True
     return False
 
-# Zoptymalizowana i poprawiona funkcja komunikacji z AI
 def generate_intel(prompt):
     try:
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        best = next((m for m in models if '1.5-flash' in m), models[0])
+        return genai.GenerativeModel(best).generate_content(prompt).text
     except Exception as e:
-        return f'{{"ocena": 0, "diagnoza": "Błąd komunikacji z systemem AI: {str(e)}", "zadanie": "Brak zadań."}}'
+        return f'{{"ocena": 0, "diagnoza": "Błąd komunikacji z systemem AI.", "zadanie": "Brak zadań."}}'
 
 @st.cache_resource(show_spinner=False)
 def get_decoder():
@@ -281,21 +279,22 @@ if st.session_state.auth_user is None:
             pw = st.text_input("Hasło", type="password")
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("Zaloguj się do panelu"):
-                # Próba logowania Auth (Supabase) - DO WDROZENIA W PRODUKCJI
-                # try:
-                #     response = supabase.auth.sign_in_with_password({"email": em, "password": pw})
-                #     st.session_state.auth_user = response.user.email
-                #     ... pobranie roli ...
-                #     st.rerun()
-                # except Exception as e:
-                #     st.error("Nieprawidłowy adres e-mail lub hasło (albo konto nie zostało zweryfikowane).")
-                
-                # Obecne rozwiązanie bazodanowe:
                 res = supabase.table('konta').select('*').eq('email', em).execute()
                 if res.data and res.data[0]['haslo'] == pw:
-                    st.session_state.auth_user = em
-                    st.session_state.role = res.data[0]['rola']
-                    st.rerun()
+                    
+                    # LOGIKA BLOKUJĄCA (Jeśli is_verified jest równy False, to blokujemy. Brak pola = stare konto, wpuszczamy)
+                    is_verified = res.data[0].get('zweryfikowany')
+                    
+                    if em.lower() == 'admin@fpv.pl':
+                        is_verified = True # Konto główne (Root) ma zawsze weryfikację
+                        
+                    # Twarda blokada! Wpuszcza tylko jeśli is_verified nie jest ściśle równe False
+                    if is_verified is False:
+                        st.error("⚠️ Twoje konto oczekuje na weryfikację. Skontaktuj się z Administratorem.")
+                    else:
+                        st.session_state.auth_user = em
+                        st.session_state.role = res.data[0]['rola']
+                        st.rerun()
                 else: st.error("Nieprawidłowy adres e-mail lub hasło.")
             st.markdown("</div>", unsafe_allow_html=True)
             
@@ -312,12 +311,12 @@ if st.session_state.auth_user is None:
                     if not is_valid:
                         st.error(msg)
                     else:
-                        # W przyszłości: supabase.auth.sign_up({"email": rem, "password": rpw, "options": {"data": {"imie": rnm, "rola": "Kursant"}}})
+                        # TWARDE PRZYPISANIE 'zweryfikowany': False do nowej kolumny
                         supabase.table('konta').insert({
                             'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
-                            'tokeny': 10, 'zadania': []
+                            'tokeny': 10, 'zadania': [], 'zweryfikowany': False
                         }).execute()
-                        st.success("Konto założone pomyślnie! Możesz się teraz zalogować.")
+                        st.success("Konto założone pomyślnie! Oczekuj na weryfikację przez Administratora.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -354,8 +353,10 @@ if is_instructor:
             
         if not cadets: st.warning("Brak użytkowników w bazie danych."); st.stop()
         
-        display_names = [k['email'] for k in cadets]
-        selected_email = st.radio("Wybierz użytkownika:", display_names, label_visibility="collapsed")
+        display_names = [f"✅ {k['email']}" if k.get('zweryfikowany') is not False else f"❌ {k['email']}" for k in cadets]
+        selected_display = st.radio("Wybierz użytkownika:", display_names, label_visibility="collapsed")
+        
+        selected_email = selected_display[2:] 
         target_data = next(k for k in cadets if k['email'] == selected_email)
         
         st.markdown(f"<br><p class='mono-text'>STAN KONTA: <span style='color: {ACCENT_LIGHT}; font-weight: bold;'>{target_data.get('tokeny', 0)} Tokenów</span></p>", unsafe_allow_html=True)
@@ -375,9 +376,16 @@ if is_instructor:
         inst_ind = st.selectbox("Styl lotu", ["Cinematic / Płynny", "Racing (Wyścigi)", "Freestyle"]) if inst_env == "Lot rzeczywisty" else "Standard"
         inst_skill = st.selectbox("Poziom zaawansowania", ["Początkujący", "Średniozaawansowany", "Ekspert"])
         
-        # Opcje dostępne TYLKO dla Admina
         if is_admin:
-            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KADRĄ (ADMIN)</p>", unsafe_allow_html=True)
+            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KONTAMI (ADMIN)</p>", unsafe_allow_html=True)
+            
+            if target_data.get('zweryfikowany') is False:
+                if st.button("✅ Zweryfikuj to konto (Wpuść)", use_container_width=True):
+                    supabase.table('konta').update({"zweryfikowany": True}).eq('email', selected_email).execute()
+                    st.success("Konto zweryfikowane! Użytkownik może się teraz zalogować.")
+                    time.sleep(1)
+                    st.rerun()
+            
             if target_data['rola'].lower() == 'kursant':
                 if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
                     supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
@@ -398,7 +406,6 @@ if is_instructor:
     with col_main:
         st.markdown(f"<h2>Profil użytkownika: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']} ({target_data['rola']})</span></h2>", unsafe_allow_html=True)
         
-        # EDYCJA DANYCH I USUWANIE KONTA PRZEZ ADMINA
         if is_admin:
             with st.expander("⚙️ Edycja danych użytkownika (Tylko Admin)"):
                 with st.form("edit_user_form"):
@@ -624,8 +631,9 @@ else:
                         with st.spinner("Nasz mechanik analizuje problem..."):
                             prompt = f"Jesteś przyjaznym i profesjonalnym serwisantem dronów FPV. Krótko i zwięźle pomóż rozwiązać problem użytkownika, udzielając porad w punktach. Problem: {mech_query}"
                             try:
-                                model = genai.GenerativeModel('models/gemini-1.5-flash')
-                                mech_resp = model.generate_content(prompt).text
+                                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                best_model = next((m for m in models if '1.5-flash' in m), models[0])
+                                mech_resp = genai.GenerativeModel(best_model).generate_content(prompt).text
                                 
                                 user_history = user_data.get('zadania', [])
                                 user_history.append({
@@ -639,7 +647,7 @@ else:
                                 st.success("Analiza zakończona! Wskazówki zostały zapisane w Twojej historii lotów:")
                                 st.markdown(mech_resp)
                             except Exception as e:
-                                st.error(f"Błąd połączenia z modułem serwisowym AI. Upewnij się, że klucz API działa. Komunikat: {e}")
+                                st.error(f"Błąd połączenia z modułem serwisowym AI. Upewnij się, że klucz API działa.")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with w_calc:
