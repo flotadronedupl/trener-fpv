@@ -68,9 +68,7 @@ st.markdown(f"""
     .stTextInput input, .stTextArea textarea, .stNumberInput input {{ background: rgba(10, 15, 10, 0.8) !important; border: 1px solid rgba(51,102,0,0.3) !important; color: #FFFFFF !important; border-radius: 10px !important; }}
     .stTextInput input:focus, .stTextArea textarea:focus {{ border-color: {ACCENT_LIGHT} !important; box-shadow: 0 0 0 2px rgba(51,102,0,0.3) !important; }}
     
-    /* Dodatkowe style dla tabel i raportów */
     .stDataFrame {{ background: rgba(10, 15, 10, 0.6); border-radius: 10px; }}
-    
     section[data-testid="stSidebar"] {{ background-color: rgba(5, 10, 5, 0.95) !important; border-right: 1px solid rgba(51,102,0,0.2); backdrop-filter: blur(20px); }}
     #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
     </style>
@@ -81,7 +79,6 @@ def render_logo():
     st.markdown(logo_html, unsafe_allow_html=True)
 
 def generate_html_report(date, score, report_text, stats_dict, pilot_name):
-    """Generuje piękny plik HTML gotowy do zapisu jako PDF"""
     import markdown
     md_text = markdown.markdown(report_text)
     html = f"""
@@ -385,8 +382,8 @@ else:
     if st.session_state.flow_state == 'launchpad':
         render_logo()
         
-        # OPCJA 1 & 4: ZAKŁADKI
-        tab_main, tab_prog, tab_rank = st.tabs(["🚀 Centrum Dowodzenia", "📈 Analiza Postępów", "🏆 Globalny Ranking"])
+        # 4 GŁÓWNE ZAKŁADKI DLA KURSANTA (W TYM NOWY WARSZTAT FPV)
+        tab_main, tab_prog, tab_rank, tab_workshop = st.tabs(["🚀 Centrum Dowodzenia", "📈 Analiza Postępów", "🏆 Globalny Ranking", "🛠️ Warsztat FPV"])
         
         with tab_main:
             c1, c2 = st.columns(2)
@@ -410,11 +407,23 @@ else:
                 if st.button("PRZEJDŹ DO WGRYWANIA PLIKU"): st.session_state.flow_state = 'upload'; st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
+            # HISTORIA I EKSPORT NA GŁÓWNYM WIDOKU
+            st.markdown("<br><p class='mono-text'>HISTORIA LOTÓW</p>", unsafe_allow_html=True)
+            for z in reversed(user_data.get('zadania', [])):
+                if isinstance(z, dict):
+                    icon = "🟢" if z.get('premium') else "📄"
+                    with st.expander(f"{icon} {z.get('data')} | {z.get('type','Lot')} | Ocena: {z.get('ocena')}/10"):
+                        st.markdown(z.get('raport'))
+                        if 'stats' in z and z.get('premium'): 
+                            render_history_stats(z['stats'])
+                            html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], user_data['imie'])
+                            st.download_button(label="📥 Pobierz jako Dokument (HTML do PDF)", data=html_report, file_name=f"FPV_Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"dl_{z.get('data')}")
+                else:
+                    with st.expander("Stare zapisy archiwalne"): st.markdown(str(z))
+
         with tab_prog:
             st.markdown("### Monitorowanie Płynności Lotu")
             st.markdown("<p style='color: #8cbf8c;'>Śledź, jak na przestrzeni czasu zmniejsza się Twój wskaźnik szarpania drążkami (Jerk). Im niżej na wykresie, tym lepszy pilot!</p>", unsafe_allow_html=True)
-            
-            # Zbieranie danych do analizy postępów
             history = [z for z in user_data.get('zadania', []) if isinstance(z, dict) and 'stats' in z]
             if len(history) > 1:
                 dates = [z['data'] for z in history]
@@ -449,20 +458,104 @@ else:
             else:
                 st.info("Brak wystarczających danych do wygenerowania rankingu.")
 
-        # HISTORIA I EKSPORT NA GŁÓWNYM WIDOKU
-        st.markdown("<br><p class='mono-text'>HISTORIA LOTÓW</p>", unsafe_allow_html=True)
-        for z in reversed(user_data.get('zadania', [])):
-            if isinstance(z, dict):
-                icon = "🟢" if z.get('premium') else "📄"
-                with st.expander(f"{icon} {z.get('data')} | {z.get('type','Lot')} | Ocena: {z.get('ocena')}/10"):
-                    st.markdown(z.get('raport'))
-                    if 'stats' in z and z.get('premium'): 
-                        render_history_stats(z['stats'])
-                        # EKSPORT - Opcja 3
-                        html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], user_data['imie'])
-                        st.download_button(label="📥 Pobierz jako Dokument (HTML do PDF)", data=html_report, file_name=f"FPV_Raport_{z.get('data').split(' ')[0]}.html", mime="text/html")
-            else:
-                with st.expander("Stare zapisy archiwalne"): st.markdown(str(z))
+        # ==========================================
+        # NOWY MODUŁ: WARSZTAT FPV
+        # ==========================================
+        with tab_workshop:
+            st.markdown("## 🛠️ Warsztat i Wiedza FPV")
+            st.markdown("<p style='color: #8cbf8c;'>Twoje centrum diagnozy usterek, konfiguracji sprzętu i poszerzania wiedzy lotniczej.</p>", unsafe_allow_html=True)
+            
+            w_mech, w_calc, w_vtx, w_dict = st.tabs(["🤖 Wirtualny Mechanik AI", "⚖️ Kalkulator Napędu", "📡 Ściągawka VTX", "📚 Słowniczek Betaflight"])
+            
+            with w_mech:
+                st.markdown("### Sztuczna Inteligencja Serwisowa")
+                st.write("Opisz objawy, jakie daje Twój dron (np. wibracje przy opadaniu, gorące silniki), a AI postara się zdiagnozować usterkę.")
+                mech_query = st.text_area("Twój problem ze sprzętem:", placeholder="Np. Dron po zrobieniu flipa na chwilę traci moc i dziwnie wyje...")
+                st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
+                if st.button("ZAPYTAJ MECHANIKA (-0 TOKENÓW)"):
+                    if mech_query and init_ai():
+                        with st.spinner("Mechanik analizuje objawy..."):
+                            prompt = f"Jesteś profesjonalnym serwisantem dronów FPV. Krótko i zwięźle pomóż rozwiązać problem użytkownika w punktach. Problem: {mech_query}"
+                            try:
+                                mech_resp = genai.GenerativeModel('gemini-1.5-flash').generate_content(prompt).text
+                                st.success("Diagnoza zakończona:")
+                                st.markdown(mech_resp)
+                            except:
+                                st.error("Błąd połączenia z modułem serwisowym AI.")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with w_calc:
+                st.markdown("### Kreator Setupu Drona")
+                frame_size = st.selectbox("Rozmiar ramy:", ["TinyWhoop (65-75mm)", "3 Cale (Cinewhoop / Micro)", "5 Cali (Freestyle / Race)", "7 Cali (Long Range)"])
+                
+                # Słownik z rekomendacjami
+                specs = {
+                    "TinyWhoop (65-75mm)": {"Silniki": "0702 - 0802 (19000KV - 25000KV)", "Bateria": "1S (300mAh - 450mAh) BT2.0", "ESC": "5A - 12A (AIO)", "Śmigła": "31mm - 40mm Bi-blade / Tri-blade"},
+                    "3 Cale (Cinewhoop / Micro)": {"Silniki": "1404 - 1504 (3000KV - 4500KV)", "Bateria": "4S (650mAh - 850mAh)", "ESC": "20A - 35A", "Śmigła": "3 cale Tri-blade (z osłonami lub bez)"},
+                    "5 Cali (Freestyle / Race)": {"Silniki": "2207 - 2306 (1750KV - 1950KV dla 6S)", "Bateria": "6S (1050mAh - 1300mAh)", "ESC": "45A - 60A", "Śmigła": "5.1 cala Tri-blade (np. 5143, 51466)"},
+                    "7 Cali (Long Range)": {"Silniki": "2806.5 - 2809 (1300KV - 1500KV)", "Bateria": "6S Li-Ion (4000mAh) lub LiPo (2000mAh+)", "ESC": "50A - 60A", "Śmigła": "7 cali Bi-blade / Tri-blade (np. 7040)"}
+                }
+                
+                st.markdown(f"#### Zalecany setup dla: {frame_size}")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.info(f"**⚡ Silniki (Statory & KV):**\n\n{specs[frame_size]['Silniki']}")
+                    st.info(f"**🔋 Bateria (Napięcie & Pojemność):**\n\n{specs[frame_size]['Bateria']}")
+                with c2:
+                    st.info(f"**🔌 ESC (Regulator obrotów):**\n\n{specs[frame_size]['ESC']}")
+                    st.info(f"**🚁 Śmigła (Props):**\n\n{specs[frame_size]['Śmigła']}")
+
+            with w_vtx:
+                st.markdown("### Częstotliwości VTX (Raceband)")
+                st.write("Wybierz liczbę pilotów latających jednocześnie, a system wskaże najbezpieczniejsze kanały do ustawienia na nadajnikach (VTx) i goglach.")
+                
+                pilots_count = st.slider("Liczba pilotów w grupie:", 1, 8, 3)
+                
+                # Złota zasada separacji Raceband
+                safe_channels = {
+                    1: ["R1"],
+                    2: ["R1", "R8"],
+                    3: ["R1", "R4", "R8"],
+                    4: ["R1", "R3", "R6", "R8"],
+                    5: ["R1", "R3", "R5", "R7", "R8"], # Zaczyna być ciasno
+                    6: ["R1", "R2", "R4", "R6", "R7", "R8"],
+                    7: ["R1", "R2", "R3", "R4", "R6", "R7", "R8"],
+                    8: ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"] # Max zapchany eter
+                }
+                
+                active_ch = safe_channels[pilots_count]
+                
+                # Tabela Raceband
+                rb_data = {
+                    "Kanał": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"],
+                    "Częstotliwość (MHz)": [5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917]
+                }
+                df_rb = pd.DataFrame(rb_data)
+                
+                def highlight_active(row):
+                    if row['Kanał'] in active_ch: return ['background-color: #336600; color: white; font-weight: bold'] * len(row)
+                    return [''] * len(row)
+                
+                st.dataframe(df_rb.style.apply(highlight_active, axis=1), use_container_width=True)
+                st.success(f"Zalecany podział kanałów dla {pilots_count} pilotów: **{', '.join(active_ch)}**")
+
+            with w_dict:
+                st.markdown("### Słowniczek Żargonu Betaflight")
+                
+                with st.expander("P-I-D (Proportional, Integral, Derivative)"):
+                    st.write("**P (Proportional)** - Szybkość reakcji drona na drążki i wiatr. Zbyt niskie = dron 'pływa', zbyt wysokie = szybkie wibracje (oscylacje).")
+                    st.write("**I (Integral)** - Trzymanie zadanego kąta. Pomaga dronowi nie ulegać wpływom wiatru i środka ciężkości baterii.")
+                    st.write("**D (Derivative)** - 'Amortyzator' dla wartości P. Zapobiega przelatywaniu poza cel (overshoot) po ostrym manewrze. Zbyt wysokie D powoduje bardzo mocne grzanie silników.")
+                
+                with st.expander("Rates (RC Rate, Super Rate/Expo)"):
+                    st.write("**RC Rate** - Czułość na samym środku drążka. Im wyższa, tym szybciej dron reaguje na małe ruchy.")
+                    st.write("**Super Rate / Expo** - Czułość na samych krawędziach drążka. Pozwala na super szybkie flipy, zachowując przy tym miękki środek do płynnego lotu (Cinematic).")
+                
+                with st.expander("Propwash (Oscylacje po zejściu)"):
+                    st.write("Wibracje drona, które pojawiają się, gdy gwałtownie zawracasz lub opadasz pionowo we własne 'brudne powietrze' wyrzucone wcześniej przez śmigła. Zwalczamy to podnosząc wartość 'D' i optymalizując filtry.")
+                
+                with st.expander("RPM Filtering (Filtry dwukierunkowe DShot)"):
+                    st.write("Bardzo zaawansowana funkcja, gdzie regulator ESC na żywo wysyła do kontrolera lotu informację z jaką prędkością obraca się każdy silnik. Dzięki temu Betaflight filtruje tylko te częstotliwości, które generują hałas z silników, oszczędzając czas procesora.")
 
     elif st.session_state.flow_state == 'upload':
         st.markdown(f"<h2>SEKWENCJA ANALIZY: <span style='color: {ACCENT_LIGHT};'>{st.session_state.industry_select.upper()}</span></h2>", unsafe_allow_html=True)
@@ -519,7 +612,7 @@ else:
                                         
                                         status.update(label="Analiza zakończona sukcesem.", state="complete", expanded=False)
                                         time.sleep(1)
-                                        st.session_state.flow_state = 'launchpad' # Wraca do głównego panelu po uploadzie
+                                        st.session_state.flow_state = 'launchpad' 
                                         st.rerun()
                                     except: st.error("Wystąpił problem z systemem AI.")
                     else: st.error("Niewystarczająca liczba tokenów na koncie.")
