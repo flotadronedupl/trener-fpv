@@ -74,12 +74,10 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# KULOODPORNE LOGO 
 def render_logo():
     st.write("<div style='text-align:center; padding-bottom:3rem; display:flex; flex-direction:column; align-items:center;'><svg width='80' height='80' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01' stroke='#4d9900' stroke-width='3' stroke-linecap='round'/><path d='M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5' stroke='#4d9900' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='3' fill='#050a0a' stroke='#4d9900' stroke-width='2'/></svg><h1 style='font-size:3rem; margin:10px 0 0 0; background:linear-gradient(90deg, #FFFFFF, #8cbf8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>FPV AI Academy</h1><p style='color:#64748B; font-size:1.1rem; margin-top:0.5rem; font-weight:600; letter-spacing:2px;'>NEXT-GEN FLIGHT ANALYTICS</p></div>", unsafe_allow_html=True)
 
 def generate_html_report(date, score, report_text, stats_dict, pilot_name):
-    # Prosty wbudowany parser Markdown
     html_text = report_text.replace('<', '&lt;').replace('>', '&gt;')
     html_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html_text)
     html_text = re.sub(r'### (.*)', r'<h3>\1</h3>', html_text)
@@ -321,8 +319,37 @@ if user_data['rola'] == "Instruktor":
     with col_main:
         st.markdown(f"<h2>Akta pilota: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']}</span></h2>", unsafe_allow_html=True)
         
+        # -----------------------------------------------------------
+        # STATYSTYKI KURSANTA DLA INSTRUKTORA (NOWOŚĆ)
+        # -----------------------------------------------------------
+        zad = target_data.get('zadania', [])
+        loty = [z for z in zad if isinstance(z, dict) and 'ocena' in z and z.get('type') != 'Mechanik AI']
+        mech_uses = len([z for z in zad if isinstance(z, dict) and z.get('type') == 'Mechanik AI'])
+        avg_score = sum(z['ocena'] for z in loty) / len(loty) if loty else 0
+        
+        st.markdown("<div class='bento-card' style='margin-bottom: 30px;'>", unsafe_allow_html=True)
+        st.markdown("<p class='mono-text' style='margin-bottom: 20px;'>PODSUMOWANIE AKTYWNOŚCI KURSANTA</p>", unsafe_allow_html=True)
+        cm1, cm2, cm3 = st.columns(3)
+        cm1.metric("Wykonane Analizy", len(loty))
+        cm2.metric("Średnia Ocena AI", f"{avg_score:.1f}/10")
+        cm3.metric("Zapytania do Mechanika AI", mech_uses)
+        
+        if len(loty) > 1:
+            st.markdown("<br>", unsafe_allow_html=True)
+            dates = [z['data'] for z in loty if 'stats' in z]
+            roll_jerks = [z['stats'].get('jr', 0) for z in loty if 'stats' in z]
+            pitch_jerks = [z['stats'].get('jp', 0) for z in loty if 'stats' in z]
+            
+            if dates:
+                fig_prog_inst = go.Figure()
+                fig_prog_inst.add_trace(go.Scatter(x=dates, y=roll_jerks, mode='lines+markers', name='Roll Jerk', line=dict(color=ACCENT_LIGHT, width=2)))
+                fig_prog_inst.add_trace(go.Scatter(x=dates, y=pitch_jerks, mode='lines+markers', name='Pitch Jerk', line=dict(color='#FFFFFF', dash='dot')))
+                fig_prog_inst.update_layout(title="Historia płynności kursanta (im niżej tym lepiej)", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_prog_inst, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
         c_upl, c_vid = st.columns(2)
-        with c_upl: log_file = st.file_uploader("Wgraj plik (BBL/CSV)", type=['bbl', 'csv'], label_visibility="collapsed")
+        with c_upl: log_file = st.file_uploader("Wgraj plik z logami lotu (BBL/CSV)", type=['bbl', 'csv'], label_visibility="collapsed")
         with c_vid: vid_link = st.text_input("Opcjonalny link do nagrania (YouTube)", placeholder="https://...")
 
         df_active = None
@@ -364,18 +391,22 @@ if user_data['rola'] == "Instruktor":
                 st.session_state.instructor_draft = None
                 st.rerun()
             
-        st.markdown("<br><p class='mono-text'>ARCHIWUM RAPORTÓW</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>ARCHIWUM AKTYWNOŚCI KURSANTA</p>", unsafe_allow_html=True)
         for z in reversed(target_data.get('zadania', [])):
             if isinstance(z, dict):
-                with st.expander(f"Data: {z.get('data')} | Ocena: {z.get('ocena')}/10"):
-                    st.markdown(z.get('raport'))
-                    if 'stats' in z: 
-                        render_history_stats(z['stats'])
-                        html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], target_data['imie'])
-                        st.download_button(label="📥 Pobierz jako Dokument (HTML do PDF)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
+                if z.get('type') == 'Mechanik AI':
+                    with st.expander(f"🤖 {z.get('data')} | Warsztat: Zapytanie do Mechanika AI"):
+                        st.markdown(z.get('raport'))
+                else:
+                    with st.expander(f"📄 {z.get('data')} | Ocena: {z.get('ocena')}/10"):
+                        st.markdown(z.get('raport'))
+                        if 'stats' in z: 
+                            render_history_stats(z['stats'])
+                            html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], target_data['imie'])
+                            st.download_button(label="📥 Pobierz Dokument (PDF)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
 
 # ==========================================
-# 7. PANEL KURSANTA (NOWE ZAKŁADKI)
+# 7. PANEL KURSANTA
 # ==========================================
 else:
     with st.sidebar:
@@ -411,23 +442,27 @@ else:
                 if st.button("PRZEJDŹ DO WGRYWANIA PLIKU"): st.session_state.flow_state = 'upload'; st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            st.markdown("<br><p class='mono-text'>HISTORIA LOTÓW</p>", unsafe_allow_html=True)
+            st.markdown("<br><p class='mono-text'>HISTORIA AKTYWNOŚCI</p>", unsafe_allow_html=True)
             for z in reversed(user_data.get('zadania', [])):
                 if isinstance(z, dict):
-                    icon = "🟢" if z.get('premium') else "📄"
-                    with st.expander(f"{icon} {z.get('data')} | {z.get('type','Lot')} | Ocena: {z.get('ocena')}/10"):
-                        st.markdown(z.get('raport'))
-                        if 'stats' in z and z.get('premium'): 
-                            render_history_stats(z['stats'])
-                            html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], user_data['imie'])
-                            st.download_button(label="📥 Pobierz jako Dokument (HTML do PDF)", data=html_report, file_name=f"FPV_Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"dl_{z.get('data')}")
+                    if z.get('type') == 'Mechanik AI':
+                        with st.expander(f"🤖 {z.get('data')} | Warsztat: Mechanik AI"):
+                            st.markdown(z.get('raport'))
+                    else:
+                        icon = "🟢" if z.get('premium') else "📄"
+                        with st.expander(f"{icon} {z.get('data')} | {z.get('type','Lot')} | Ocena: {z.get('ocena')}/10"):
+                            st.markdown(z.get('raport'))
+                            if 'stats' in z and z.get('premium'): 
+                                render_history_stats(z['stats'])
+                                html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], user_data['imie'])
+                                st.download_button(label="📥 Pobierz Raport (PDF)", data=html_report, file_name=f"FPV_Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"dl_{z.get('data')}")
                 else:
                     with st.expander("Stare zapisy archiwalne"): st.markdown(str(z))
 
         with tab_prog:
             st.markdown("### Monitorowanie Płynności Lotu")
             st.markdown("<p style='color: #8cbf8c;'>Śledź, jak na przestrzeni czasu zmniejsza się Twój wskaźnik szarpania drążkami (Jerk). Im niżej na wykresie, tym lepszy pilot!</p>", unsafe_allow_html=True)
-            history = [z for z in user_data.get('zadania', []) if isinstance(z, dict) and 'stats' in z]
+            history = [z for z in user_data.get('zadania', []) if isinstance(z, dict) and 'stats' in z and z.get('type') != 'Mechanik AI']
             if len(history) > 1:
                 dates = [z['data'] for z in history]
                 roll_jerks = [z['stats'].get('jr', 0) for z in history]
@@ -439,7 +474,7 @@ else:
                 fig_prog.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_prog, use_container_width=True)
             else:
-                st.info("Zrób co najmniej dwie analizy z telemetrią, aby zobaczyć tutaj swój wykres postępu.")
+                st.info("Zrób co najmniej dwie analizy lotu, aby zobaczyć tutaj swój wykres postępu.")
 
         with tab_rank:
             st.markdown("### Top Piloci FPV Academy")
@@ -448,7 +483,7 @@ else:
             
             for k in all_cadets:
                 zad = k.get('zadania', [])
-                valid_zad = [z for z in zad if isinstance(z, dict) and 'ocena' in z]
+                valid_zad = [z for z in zad if isinstance(z, dict) and 'ocena' in z and z.get('type') != 'Mechanik AI']
                 if valid_zad:
                     avg_ocena = sum(z['ocena'] for z in valid_zad) / len(valid_zad)
                     max_g = max((z.get('stats', {}).get('max_g', 0) for z in valid_zad), default=0)
@@ -477,15 +512,23 @@ else:
                         with st.spinner("Mechanik analizuje objawy..."):
                             prompt = f"Jesteś profesjonalnym serwisantem dronów FPV. Krótko i zwięźle pomóż rozwiązać problem użytkownika w punktach. Problem: {mech_query}"
                             try:
-                                # Używamy tego samego, bezpiecznego mechanizmu co w głównym module
                                 models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                                 best_model = next((m for m in models if '1.5-flash' in m), models[0])
                                 mech_resp = genai.GenerativeModel(best_model).generate_content(prompt).text
                                 
-                                st.success("Diagnoza zakończona:")
+                                # ZAPISANIE AKCJI DO HISTORII KURSANTA (NOWOŚĆ)
+                                user_history = user_data.get('zadania', [])
+                                user_history.append({
+                                    "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "type": "Mechanik AI",
+                                    "raport": f"**Pytanie do systemu:** {mech_query}\n\n**Diagnoza Mechanika:**\n{mech_resp}"
+                                })
+                                supabase.table('konta').update({"zadania": user_history}).eq('email', user_data['email']).execute()
+                                
+                                st.success("Diagnoza zakończona (zapisano w Historii Lotów):")
                                 st.markdown(mech_resp)
                             except Exception as e:
-                                st.error(f"Błąd połączenia z modułem serwisowym AI. Upewnij się, że klucz API działa. Szegóły błędu: {e}")
+                                st.error(f"Błąd połączenia z modułem serwisowym AI. Upewnij się, że klucz API działa.")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with w_calc:
@@ -508,10 +551,29 @@ else:
                     st.info(f"**🔌 ESC (Regulator obrotów):**\n\n{specs[frame_size]['ESC']}")
                     st.info(f"**🚁 Śmigła (Props):**\n\n{specs[frame_size]['Śmigła']}")
 
+            # -----------------------------------------------------------
+            # ROZSZERZONA ŚCIĄGAWKA VTX (NOWOŚĆ)
+            # -----------------------------------------------------------
             with w_vtx:
-                st.markdown("### Częstotliwości VTX (Raceband)")
-                st.write("Wybierz liczbę pilotów latających jednocześnie, a system wskaże najbezpieczniejsze kanały do ustawienia na nadajnikach (VTx) i goglach.")
+                st.markdown("### Częstotliwości VTX (Macierz 5.8 GHz)")
+                st.write("Pełna tabela pasm i kanałów wideo używanych przez nadajniki dronów FPV.")
                 
+                # Zbudowanie potężnej macierzy dla wszystkich pasm
+                vtx_matrix = pd.DataFrame({
+                    "Pasmo": ["Band A", "Band B", "Band E", "Fatshark (F)", "Raceband (R)"],
+                    "CH 1": [5865, 5733, 5705, 5740, 5658],
+                    "CH 2": [5845, 5752, 5685, 5760, 5695],
+                    "CH 3": [5825, 5771, 5665, 5780, 5732],
+                    "CH 4": [5805, 5790, 5645, 5800, 5769],
+                    "CH 5": [5785, 5809, 5885, 5820, 5806],
+                    "CH 6": [5765, 5828, 5905, 5840, 5843],
+                    "CH 7": [5745, 5847, 5925, 5860, 5880],
+                    "CH 8": [5725, 5866, 5945, 5880, 5917]
+                })
+                st.dataframe(vtx_matrix.set_index('Pasmo'), use_container_width=True)
+                
+                st.markdown("#### Inteligentny podział dla lotów grupowych (Raceband)")
+                st.write("Wybierz liczbę pilotów latających jednocześnie, a system wskaże najbezpieczniejsze kanały do ustawienia na goglach, aby uniknąć nakładania się wizji.")
                 pilots_count = st.slider("Liczba pilotów w grupie:", 1, 8, 3)
                 
                 safe_channels = {
@@ -524,20 +586,7 @@ else:
                     7: ["R1", "R2", "R3", "R4", "R6", "R7", "R8"],
                     8: ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
                 }
-                
                 active_ch = safe_channels[pilots_count]
-                
-                rb_data = {
-                    "Kanał": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"],
-                    "Częstotliwość (MHz)": [5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917]
-                }
-                df_rb = pd.DataFrame(rb_data)
-                
-                def highlight_active(row):
-                    if row['Kanał'] in active_ch: return ['background-color: #336600; color: white; font-weight: bold'] * len(row)
-                    return [''] * len(row)
-                
-                st.dataframe(df_rb.style.apply(highlight_active, axis=1), use_container_width=True)
                 st.success(f"Zalecany podział kanałów dla {pilots_count} pilotów: **{', '.join(active_ch)}**")
 
             with w_dict:
