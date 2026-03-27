@@ -247,7 +247,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
             
             if v_col and mode == "Real":
@@ -255,10 +255,10 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
-                f_bat.update_layout(title="Spadek napięcia a gaz", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+                f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
                 
-            if not has_data: st.info("Brak danych o zasilaniu w logu symulatora.")
+            if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
@@ -278,9 +278,18 @@ if st.session_state.auth_user is None:
             if st.button("Zaloguj się do panelu"):
                 res = supabase.table('konta').select('*').eq('email', em).execute()
                 if res.data and res.data[0]['haslo'] == pw:
-                    st.session_state.auth_user = em
-                    st.session_state.role = res.data[0]['rola']
-                    st.rerun()
+                    
+                    # LOGIKA BLOKUJĄCA NIEZWERYFIKOWANYCH (Z wyjątkiem roota)
+                    is_verified = res.data[0].get('zweryfikowany', True)
+                    if em.lower() == 'admin@fpv.pl':
+                        is_verified = True # Konto główne (Root) ma zawsze weryfikację
+                        
+                    if not is_verified:
+                        st.error("⚠️ Twoje konto nie zostało jeszcze zweryfikowane! Sprawdź swoją skrzynkę e-mail lub skontaktuj się z Administratorem platformy, by uaktywnić dostęp.")
+                    else:
+                        st.session_state.auth_user = em
+                        st.session_state.role = res.data[0]['rola']
+                        st.rerun()
                 else: st.error("Nieprawidłowy adres e-mail lub hasło.")
             st.markdown("</div>", unsafe_allow_html=True)
             
@@ -297,17 +306,23 @@ if st.session_state.auth_user is None:
                     if not is_valid:
                         st.error(msg)
                     else:
-                        # Zmieniono insert, by pasował do bazy bez wywoływania APIError
+                        # DO BAZY TRAFIA NOWE KONTO (Domyślnie NIEZWERYFIKOWANE)
                         supabase.table('konta').insert({
                             'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
-                            'tokeny': 10, 'zadania': []
+                            'tokeny': 10, 'zadania': [], 'zweryfikowany': False
                         }).execute()
-                        st.success("Konto założone pomyślnie! Możesz się teraz zalogować.")
+                        st.success("Konto założone pomyślnie! Wymagana jest weryfikacja e-mail, zanim będziesz mógł się zalogować.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
+# ==========================================
+# 6. LOGIKA UPRAWNIEŃ (KTO JEST KIM)
+# ==========================================
 user_data = supabase.table('konta').select('*').eq('email', st.session_state.auth_user).execute().data[0]
-is_admin = user_data['rola'].lower() == 'admin'
+
+# GWARANCJA BYCIA ADMINEM - Twarde przypisanie dla admin@fpv.pl
+is_admin = (user_data['rola'].lower() == 'admin') or (user_data['email'].lower() == 'admin@fpv.pl')
+is_instructor = (user_data['rola'].lower() in ['instruktor', 'admin']) or is_admin
 
 def render_history_stats(stats_dict):
     st.markdown("<p class='mono-text' style='margin-top: 15px;'>METRYKI ZAPISANE W BAZIE</p>", unsafe_allow_html=True)
@@ -318,9 +333,9 @@ def render_history_stats(stats_dict):
     c4.metric("Max G", f"{stats_dict.get('max_g', 0):.1f} G")
 
 # ==========================================
-# 6. PANEL INSTRUKTORA ORAZ ADMINA
+# 7. PANEL INSTRUKTORA / ADMINA
 # ==========================================
-if user_data['rola'].lower() in ["instruktor", "admin"]:
+if is_instructor:
     render_logo()
     col_nav, col_main = st.columns([1, 3])
     
@@ -334,7 +349,12 @@ if user_data['rola'].lower() in ["instruktor", "admin"]:
             
         if not cadets: st.warning("Brak użytkowników w bazie danych."); st.stop()
         
-        selected_email = st.radio("Wybierz użytkownika:", [k['email'] for k in cadets], label_visibility="collapsed")
+        # Wyświetlanie informacji o statusie weryfikacji przy mailu w menu
+        display_names = [f"✅ {k['email']}" if k.get('zweryfikowany', True) else f"❌ {k['email']}" for k in cadets]
+        selected_display = st.radio("Wybierz użytkownika:", display_names, label_visibility="collapsed")
+        
+        # Odnalezienie wybranego e-maila (usunięcie prefixów z emoji)
+        selected_email = selected_display[2:] 
         target_data = next(k for k in cadets if k['email'] == selected_email)
         
         st.markdown(f"<br><p class='mono-text'>STAN KONTA: <span style='color: {ACCENT_LIGHT}; font-weight: bold;'>{target_data.get('tokeny', 0)} Tokenów</span></p>", unsafe_allow_html=True)
@@ -354,9 +374,21 @@ if user_data['rola'].lower() in ["instruktor", "admin"]:
         inst_ind = st.selectbox("Styl lotu", ["Cinematic / Płynny", "Racing (Wyścigi)", "Freestyle"]) if inst_env == "Lot rzeczywisty" else "Standard"
         inst_skill = st.selectbox("Poziom zaawansowania", ["Początkujący", "Średniozaawansowany", "Ekspert"])
         
-        # PANELE DOSTĘPNE TYLKO DLA ADMINA (Nadawanie i Odbieranie Ról)
+        # ----------------------------------------------------
+        # PANEL ZARZĄDZANIA KADRĄ I WERYFIKACJĄ (TYLKO ADMIN)
+        # ----------------------------------------------------
         if is_admin:
-            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KADRĄ</p>", unsafe_allow_html=True)
+            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KONTA (ADMIN)</p>", unsafe_allow_html=True)
+            
+            # 1. PRZYCISK RĘCZNEJ WERYFIKACJI
+            if not target_data.get('zweryfikowany', True):
+                if st.button("✅ Zweryfikuj to konto (Wpuść)", use_container_width=True):
+                    supabase.table('konta').update({"zweryfikowany": True}).eq('email', selected_email).execute()
+                    st.success("Konto zweryfikowane! Użytkownik może się teraz zalogować.")
+                    time.sleep(1)
+                    st.rerun()
+            
+            # 2. ZARZĄDZANIE UPRAWNIENIAMI
             if target_data['rola'].lower() == 'kursant':
                 if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
                     supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
@@ -377,7 +409,6 @@ if user_data['rola'].lower() in ["instruktor", "admin"]:
     with col_main:
         st.markdown(f"<h2>Profil użytkownika: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']} ({target_data['rola']})</span></h2>", unsafe_allow_html=True)
         
-        # EDYCJA DANYCH PRZEZ ADMINA
         if is_admin:
             with st.expander("⚙️ Edycja danych użytkownika (Tylko Admin)"):
                 with st.form("edit_user_form"):
@@ -481,7 +512,7 @@ if user_data['rola'].lower() in ["instruktor", "admin"]:
                             st.download_button(label="📥 Pobierz Dokument (PDF z Wykresami)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
 
 # ==========================================
-# 7. PANEL KURSANTA
+# 8. PANEL KURSANTA
 # ==========================================
 else:
     with st.sidebar:
