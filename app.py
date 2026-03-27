@@ -78,9 +78,14 @@ def render_logo():
     logo_html = f"""<div style='text-align:center; padding-bottom:3rem; display:flex; flex-direction:column; align-items:center;'><svg width='80' height='80' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01' stroke='{ACCENT_LIGHT}' stroke-width='3' stroke-linecap='round'/><path d='M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5' stroke='#4d9900' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='3' fill='#050a0a' stroke='{ACCENT_LIGHT}' stroke-width='2'/></svg><h1 style='font-size:3rem; margin:10px 0 0 0; background:linear-gradient(90deg, #FFFFFF, #8cbf8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>FPV AI Academy</h1><p style='color:#64748B; font-size:1.1rem; margin-top:0.5rem; font-weight:600; letter-spacing:2px;'>NEXT-GEN FLIGHT ANALYTICS</p></div>"""
     st.markdown(logo_html, unsafe_allow_html=True)
 
+# BEZPIECZNY GENERATOR RAPORTÓW (Bez biblioteki markdown)
 def generate_html_report(date, score, report_text, stats_dict, pilot_name):
-    import markdown
-    md_text = markdown.markdown(report_text)
+    # Prosty wbudowany parser Markdown
+    html_text = report_text.replace('<', '&lt;').replace('>', '&gt;')
+    html_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html_text)
+    html_text = re.sub(r'### (.*)', r'<h3>\1</h3>', html_text)
+    html_text = html_text.replace('\n', '<br>')
+    
     html = f"""
     <html>
     <head>
@@ -93,6 +98,7 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
             .stat {{ text-align: center; font-weight: bold; font-size: 1.2em; }}
             .stat span {{ display: block; font-size: 0.8em; color: #666; font-weight: normal; text-transform: uppercase; }}
             .score {{ font-size: 2em; color: {PRIMARY_COLOR}; font-weight: bold; text-align: center; margin-bottom: 20px; }}
+            .content-box {{ margin-top: 30px; padding: 20px; background: #fafafa; border-radius: 10px; border-left: 4px solid {ACCENT_LIGHT}; }}
         </style>
     </head>
     <body>
@@ -107,7 +113,7 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
             <div class="stat"><span>Pitch Jerk</span>{stats_dict.get('jp', 0):.2f}</div>
             <div class="stat"><span>Max G-Force</span>{stats_dict.get('max_g', 0):.1f} G</div>
         </div>
-        <div>{md_text}</div>
+        <div class="content-box">{html_text}</div>
         <p style="margin-top: 50px; text-align: center; color: #999; font-size: 0.8em;">Wygenerowano automatycznie przez FPV AI Academy</p>
     </body>
     </html>
@@ -367,7 +373,7 @@ if user_data['rola'] == "Instruktor":
                     if 'stats' in z: 
                         render_history_stats(z['stats'])
                         html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], target_data['imie'])
-                        st.download_button(label="📥 Pobierz jako Dokument (HTML do PDF)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html")
+                        st.download_button(label="📥 Pobierz jako Dokument (HTML do PDF)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
 
 # ==========================================
 # 7. PANEL KURSANTA (NOWE ZAKŁADKI)
@@ -382,7 +388,6 @@ else:
     if st.session_state.flow_state == 'launchpad':
         render_logo()
         
-        # 4 GŁÓWNE ZAKŁADKI DLA KURSANTA (W TYM NOWY WARSZTAT FPV)
         tab_main, tab_prog, tab_rank, tab_workshop = st.tabs(["🚀 Centrum Dowodzenia", "📈 Analiza Postępów", "🏆 Globalny Ranking", "🛠️ Warsztat FPV"])
         
         with tab_main:
@@ -407,7 +412,6 @@ else:
                 if st.button("PRZEJDŹ DO WGRYWANIA PLIKU"): st.session_state.flow_state = 'upload'; st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # HISTORIA I EKSPORT NA GŁÓWNYM WIDOKU
             st.markdown("<br><p class='mono-text'>HISTORIA LOTÓW</p>", unsafe_allow_html=True)
             for z in reversed(user_data.get('zadania', [])):
                 if isinstance(z, dict):
@@ -458,9 +462,6 @@ else:
             else:
                 st.info("Brak wystarczających danych do wygenerowania rankingu.")
 
-        # ==========================================
-        # NOWY MODUŁ: WARSZTAT FPV
-        # ==========================================
         with tab_workshop:
             st.markdown("## 🛠️ Warsztat i Wiedza FPV")
             st.markdown("<p style='color: #8cbf8c;'>Twoje centrum diagnozy usterek, konfiguracji sprzętu i poszerzania wiedzy lotniczej.</p>", unsafe_allow_html=True)
@@ -488,7 +489,6 @@ else:
                 st.markdown("### Kreator Setupu Drona")
                 frame_size = st.selectbox("Rozmiar ramy:", ["TinyWhoop (65-75mm)", "3 Cale (Cinewhoop / Micro)", "5 Cali (Freestyle / Race)", "7 Cali (Long Range)"])
                 
-                # Słownik z rekomendacjami
                 specs = {
                     "TinyWhoop (65-75mm)": {"Silniki": "0702 - 0802 (19000KV - 25000KV)", "Bateria": "1S (300mAh - 450mAh) BT2.0", "ESC": "5A - 12A (AIO)", "Śmigła": "31mm - 40mm Bi-blade / Tri-blade"},
                     "3 Cale (Cinewhoop / Micro)": {"Silniki": "1404 - 1504 (3000KV - 4500KV)", "Bateria": "4S (650mAh - 850mAh)", "ESC": "20A - 35A", "Śmigła": "3 cale Tri-blade (z osłonami lub bez)"},
@@ -511,21 +511,19 @@ else:
                 
                 pilots_count = st.slider("Liczba pilotów w grupie:", 1, 8, 3)
                 
-                # Złota zasada separacji Raceband
                 safe_channels = {
                     1: ["R1"],
                     2: ["R1", "R8"],
                     3: ["R1", "R4", "R8"],
                     4: ["R1", "R3", "R6", "R8"],
-                    5: ["R1", "R3", "R5", "R7", "R8"], # Zaczyna być ciasno
+                    5: ["R1", "R3", "R5", "R7", "R8"],
                     6: ["R1", "R2", "R4", "R6", "R7", "R8"],
                     7: ["R1", "R2", "R3", "R4", "R6", "R7", "R8"],
-                    8: ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"] # Max zapchany eter
+                    8: ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
                 }
                 
                 active_ch = safe_channels[pilots_count]
                 
-                # Tabela Raceband
                 rb_data = {
                     "Kanał": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"],
                     "Częstotliwość (MHz)": [5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917]
