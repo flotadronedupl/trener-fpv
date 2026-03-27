@@ -406,7 +406,7 @@ if user_data['rola'] == "Instruktor":
                             st.download_button(label="📥 Pobierz Dokument (PDF)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
 
 # ==========================================
-# 7. PANEL KURSANTA
+# 7. PANEL KURSANTA (NOWE ZAKŁADKI)
 # ==========================================
 else:
     with st.sidebar:
@@ -516,7 +516,7 @@ else:
                                 best_model = next((m for m in models if '1.5-flash' in m), models[0])
                                 mech_resp = genai.GenerativeModel(best_model).generate_content(prompt).text
                                 
-                                # ZAPISANIE AKCJI DO HISTORII KURSANTA (NOWOŚĆ)
+                                # ZAPISANIE AKCJI DO HISTORII KURSANTA
                                 user_history = user_data.get('zadania', [])
                                 user_history.append({
                                     "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -552,15 +552,14 @@ else:
                     st.info(f"**🚁 Śmigła (Props):**\n\n{specs[frame_size]['Śmigła']}")
 
             # -----------------------------------------------------------
-            # ROZSZERZONA ŚCIĄGAWKA VTX (NOWOŚĆ)
+            # ROZSZERZONA ŚCIĄGAWKA VTX (NOWOŚĆ Z WIELOMA PASMAMI)
             # -----------------------------------------------------------
             with w_vtx:
-                st.markdown("### Częstotliwości VTX (Macierz 5.8 GHz)")
-                st.write("Pełna tabela pasm i kanałów wideo używanych przez nadajniki dronów FPV.")
+                st.markdown("### Pełna Macierz Częstotliwości VTX (5.8 GHz)")
+                st.write("Wszystkie najpopularniejsze pasma i kanały wideo używane w lotach FPV.")
                 
-                # Zbudowanie potężnej macierzy dla wszystkich pasm
                 vtx_matrix = pd.DataFrame({
-                    "Pasmo": ["Band A", "Band B", "Band E", "Fatshark (F)", "Raceband (R)"],
+                    "Pasmo": ["Band A", "Band B", "Band E (Boscam)", "Fatshark (F)", "Raceband (R)"],
                     "CH 1": [5865, 5733, 5705, 5740, 5658],
                     "CH 2": [5845, 5752, 5685, 5760, 5695],
                     "CH 3": [5825, 5771, 5665, 5780, 5732],
@@ -570,24 +569,39 @@ else:
                     "CH 7": [5745, 5847, 5925, 5860, 5880],
                     "CH 8": [5725, 5866, 5945, 5880, 5917]
                 })
-                st.dataframe(vtx_matrix.set_index('Pasmo'), use_container_width=True)
+                vtx_matrix = vtx_matrix.set_index('Pasmo')
                 
-                st.markdown("#### Inteligentny podział dla lotów grupowych (Raceband)")
-                st.write("Wybierz liczbę pilotów latających jednocześnie, a system wskaże najbezpieczniejsze kanały do ustawienia na goglach, aby uniknąć nakładania się wizji.")
-                pilots_count = st.slider("Liczba pilotów w grupie:", 1, 8, 3)
+                st.markdown("#### Inteligentny podział dla lotów grupowych (Miks Pasm)")
+                st.write("Dla większych grup system specjalnie miesza różne pasma (np. Fatshark z Racebandem), by zlikwidować zakłócenia wizji (IMD) i zagwarantować maksymalny odstęp między pilotami.")
+                pilots_count = st.slider("Ilu pilotów leci jednocześnie?", 1, 8, 4)
                 
-                safe_channels = {
-                    1: ["R1"],
-                    2: ["R1", "R8"],
-                    3: ["R1", "R4", "R8"],
-                    4: ["R1", "R3", "R6", "R8"],
-                    5: ["R1", "R3", "R5", "R7", "R8"],
-                    6: ["R1", "R2", "R4", "R6", "R7", "R8"],
-                    7: ["R1", "R2", "R3", "R4", "R6", "R7", "R8"],
-                    8: ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
+                # Zestawy częstotliwości eliminujące zjawisko IMD (maksymalizujące separację)
+                optimal_freqs = {
+                    1: [5658],
+                    2: [5658, 5917],
+                    3: [5658, 5769, 5917],
+                    4: [5658, 5732, 5843, 5917],
+                    5: [5645, 5705, 5769, 5843, 5917], # Wymieszane: E4, E1, R4, R6, R8
+                    6: [5645, 5695, 5760, 5800, 5860, 5917], # Wymieszane: E4, R2, F2, F4, F7, R8
+                    7: [5645, 5695, 5740, 5780, 5820, 5860, 5917], # Wymieszane: E4, R2, F1, F3, F5, F7, R8
+                    8: [5645, 5685, 5725, 5760, 5800, 5840, 5880, 5917] # Wymieszane: E4, E2, A8, F2, F4, F6, F8, R8
                 }
-                active_ch = safe_channels[pilots_count]
-                st.success(f"Zalecany podział kanałów dla {pilots_count} pilotów: **{', '.join(active_ch)}**")
+                active_freqs = optimal_freqs[pilots_count]
+                
+                # Funkcja podświetlająca komórki z wybranymi częstotliwościami
+                def highlight_active(row):
+                    return ['background-color: #336600; color: white; font-weight: bold' if val in active_freqs else '' for val in row]
+                
+                st.dataframe(vtx_matrix.style.apply(highlight_active, axis=1), use_container_width=True)
+                
+                freq_to_name = {
+                    5658: "R1", 5917: "R8", 5769: "R4", 5732: "R3", 5843: "R6",
+                    5645: "E4", 5705: "E1", 5695: "R2", 5760: "F2", 5800: "F4",
+                    5860: "F7", 5740: "F1", 5780: "F3", 5820: "F5", 5685: "E2",
+                    5725: "A8", 5840: "F6", 5880: "R7"
+                }
+                ch_names = [freq_to_name.get(f, str(f)) for f in active_freqs]
+                st.success(f"Optymalny przydział kanałów dla {pilots_count} pilotów: **{', '.join(ch_names)}**")
 
             with w_dict:
                 st.markdown("### Słowniczek Żargonu Betaflight")
