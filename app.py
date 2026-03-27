@@ -35,6 +35,16 @@ def init_session():
 
 init_session()
 
+# WALIDACJA HASŁA
+def is_password_strong(password):
+    if len(password) < 6:
+        return False, "Hasło musi mieć co najmniej 6 znaków."
+    if not re.search(r"[A-Z]", password):
+        return False, "Hasło musi zawierać co najmniej jedną wielką literę."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return False, "Hasło musi zawierać co najmniej jeden znak specjalny."
+    return True, ""
+
 # ==========================================
 # 2. MODERN PREMIUM UI (CSS)
 # ==========================================
@@ -75,7 +85,7 @@ st.markdown(f"""
     """, unsafe_allow_html=True)
 
 def render_logo():
-    st.write("<div style='text-align:center; padding-bottom:3rem; display:flex; flex-direction:column; align-items:center;'><svg width='80' height='80' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01' stroke='#4d9900' stroke-width='3' stroke-linecap='round'/><path d='M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5' stroke='#4d9900' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='3' fill='#050a0a' stroke='#4d9900' stroke-width='2'/></svg><h1 style='font-size:3rem; margin:10px 0 0 0; background:linear-gradient(90deg, #FFFFFF, #8cbf8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>FPV AI Academy</h1><p style='color:#64748B; font-size:1.1rem; margin-top:0.5rem; font-weight:600; letter-spacing:2px;'>NEXT-GEN FLIGHT ANALYTICS</p></div>", unsafe_allow_html=True)
+    st.write("<div style='text-align:center; padding-bottom:3rem; display:flex; flex-direction:column; align-items:center;'><svg width='80' height='80' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01' stroke='#4d9900' stroke-width='3' stroke-linecap='round'/><path d='M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5' stroke='#4d9900' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='3' fill='#050a0a' stroke='#4d9900' stroke-width='2'/></svg><h1 style='font-size:3rem; margin:10px 0 0 0; background:linear-gradient(90deg, #FFFFFF, #8cbf8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>FPV AI Academy</h1><p style='color:#64748B; font-size:1.1rem; margin-top:0.5rem; font-weight:600; letter-spacing:2px;'>TWÓJ WIRTUALNY TRENER LOTÓW</p></div>", unsafe_allow_html=True)
 
 def generate_html_report(date, score, report_text, stats_dict, pilot_name):
     html_text = report_text.replace('<', '&lt;').replace('>', '&gt;')
@@ -83,35 +93,74 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
     html_text = re.sub(r'### (.*)', r'<h3>\1</h3>', html_text)
     html_text = html_text.replace('\n', '<br>')
     
+    # Obliczenia proporcji dla pasków wizualnych w PDF
+    health_pct = max(0, min(100, stats_dict.get('health', 0)))
+    roll_jerk = stats_dict.get('jr', 0)
+    roll_pct = max(0, min(100, 100 - (roll_jerk * 12))) # Im mniejszy jerk, tym dluższy pasek
+    pitch_jerk = stats_dict.get('jp', 0)
+    pitch_pct = max(0, min(100, 100 - (pitch_jerk * 12)))
+    max_g = stats_dict.get('max_g', 1)
+    g_pct = max(0, min(100, (max_g / 10.0) * 100)) # Zakładamy 10G jako 100% skali
+    
     html = f"""
     <html>
     <head>
         <meta charset="utf-8">
         <style>
             body {{ font-family: 'Helvetica Neue', Arial, sans-serif; color: #111; background: #fff; padding: 40px; line-height: 1.6; }}
-            h1 {{ color: {PRIMARY_COLOR}; border-bottom: 2px solid {PRIMARY_COLOR}; padding-bottom: 10px; }}
-            .header {{ text-align: center; margin-bottom: 40px; }}
-            .stats-box {{ background: #f4fdf4; border: 1px solid {ACCENT_LIGHT}; padding: 20px; border-radius: 10px; margin: 20px 0; display: flex; justify-content: space-around; }}
-            .stat {{ text-align: center; font-weight: bold; font-size: 1.2em; }}
-            .stat span {{ display: block; font-size: 0.8em; color: #666; font-weight: normal; text-transform: uppercase; }}
-            .score {{ font-size: 2em; color: {PRIMARY_COLOR}; font-weight: bold; text-align: center; margin-bottom: 20px; }}
-            .content-box {{ margin-top: 30px; padding: 20px; background: #fafafa; border-radius: 10px; border-left: 4px solid {ACCENT_LIGHT}; }}
+            h1 {{ color: {PRIMARY_COLOR}; border-bottom: 2px solid {PRIMARY_COLOR}; padding-bottom: 10px; margin-bottom: 5px; }}
+            .header {{ text-align: center; margin-bottom: 30px; }}
+            .score {{ font-size: 2.5em; color: {PRIMARY_COLOR}; font-weight: bold; text-align: center; margin-bottom: 20px; }}
+            
+            /* Style dla wykresów słupkowych */
+            .charts-container {{ background: #f9fdf9; border: 1px solid #e0e0e0; padding: 25px; border-radius: 12px; margin-bottom: 30px; }}
+            .chart-title {{ font-size: 1.1em; font-weight: bold; margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }}
+            .bar-row {{ margin-bottom: 12px; }}
+            .bar-label {{ display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 4px; font-weight: bold; color: #555; }}
+            .bar-bg {{ width: 100%; background-color: #e0e0e0; border-radius: 6px; height: 16px; overflow: hidden; }}
+            .bar-fill {{ height: 100%; background-color: {ACCENT_LIGHT}; border-radius: 6px; }}
+            .bar-fill.gforce {{ background-color: #d9534f; }}
+            
+            .content-box {{ margin-top: 20px; padding: 25px; background: #fafafa; border-radius: 12px; border-left: 5px solid {ACCENT_LIGHT}; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
         </style>
     </head>
     <body>
         <div class="header">
-            <h1>Certyfikowany Raport Lotu FPV</h1>
-            <p>Data operacji: <b>{date}</b> | Pilot: <b>{pilot_name}</b></p>
+            <h1>Raport Treningowy FPV</h1>
+            <p style="color: #666; font-size: 1.1em;">Data lotu: <b>{date}</b> | Pilot: <b>{pilot_name}</b></p>
         </div>
-        <div class="score">Skuteczność: {score}/10</div>
-        <div class="stats-box">
-            <div class="stat"><span>Kondycja</span>{stats_dict.get('health', 0):.0f}%</div>
-            <div class="stat"><span>Roll Jerk</span>{stats_dict.get('jr', 0):.2f}</div>
-            <div class="stat"><span>Pitch Jerk</span>{stats_dict.get('jp', 0):.2f}</div>
-            <div class="stat"><span>Max G-Force</span>{stats_dict.get('max_g', 0):.1f} G</div>
+        
+        <div class="score">Ocena lotu: {score}/10</div>
+        
+        <div class="charts-container">
+            <div class="chart-title">Analiza Telemetryczna (Wizualizacja)</div>
+            
+            <div class="bar-row">
+                <div class="bar-label"><span>Kondycja maszyny (Brak wibracji)</span><span>{health_pct:.0f}%</span></div>
+                <div class="bar-bg"><div class="bar-fill" style="width: {health_pct}%;"></div></div>
+            </div>
+            
+            <div class="bar-row">
+                <div class="bar-label"><span>Płynność Osi Roll (Mniej szarpania = lepiej)</span><span>{roll_jerk:.2f} Wskaźnika</span></div>
+                <div class="bar-bg"><div class="bar-fill" style="width: {roll_pct}%;"></div></div>
+            </div>
+            
+            <div class="bar-row">
+                <div class="bar-label"><span>Płynność Osi Pitch (Mniej szarpania = lepiej)</span><span>{pitch_jerk:.2f} Wskaźnika</span></div>
+                <div class="bar-bg"><div class="bar-fill" style="width: {pitch_pct}%;"></div></div>
+            </div>
+            
+            <div class="bar-row">
+                <div class="bar-label"><span>Max Przeciążenie (G-Force)</span><span>{max_g:.1f} G</span></div>
+                <div class="bar-bg"><div class="bar-fill gforce" style="width: {g_pct}%;"></div></div>
+            </div>
         </div>
+        
         <div class="content-box">{html_text}</div>
-        <p style="margin-top: 50px; text-align: center; color: #999; font-size: 0.8em;">Wygenerowano automatycznie przez FPV AI Academy</p>
+        
+        <p style="margin-top: 50px; text-align: center; color: #aaa; font-size: 0.85em; border-top: 1px solid #eee; padding-top: 20px;">
+            Dokument wygenerowany automatycznie przez inteligentny system <b>FPV AI Academy</b>.
+        </p>
     </body>
     </html>
     """
@@ -177,7 +226,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
         g_vector = np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2) / 2048.0
         max_g = g_vector.max()
 
-    st.markdown("<p class='mono-text'>DASHBOARD TELEMETRYCZNY</p>", unsafe_allow_html=True)
+    st.markdown("<p class='mono-text'>WYNIKI TELEMETRII</p>", unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Płynność lotu", f"{smoothness:.1f} / 10")
     m2.metric("Średni gaz", f"{avg_t:.0f}")
@@ -188,7 +237,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
 
     if premium:
         st.markdown("<br><p class='mono-text'>ANALIZA ZAAWANSOWANA (PREMIUM)</p>", unsafe_allow_html=True)
-        t1, t2, t3, t4 = st.tabs(["Telemetria drążków", "Analiza przeciążeń (G-Force)", "Przestrzenna trajektoria 3D", "Silniki i zasilanie"])
+        t1, t2, t3, t4 = st.tabs(["Telemetria drążków", "Analiza przeciążeń (G-Force)", "Trajektoria 3D", "Silniki i zasilanie"])
         
         pdf = df.iloc[::max(1, len(df)//3000)]
         
@@ -225,7 +274,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
             
             if v_col and mode == "Real":
@@ -233,15 +282,15 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
-                f_bat.update_layout(title="Spadek napięcia a gaz", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+                f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
                 
-            if not has_data: st.info("Brak danych o zasilaniu w logu symulatora.")
+            if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
 # ==========================================
-# 5. EKRAN LOGOWANIA
+# 5. EKRAN LOGOWANIA I REJESTRACJI
 # ==========================================
 if st.session_state.auth_user is None:
     render_logo()
@@ -253,21 +302,36 @@ if st.session_state.auth_user is None:
             em = st.text_input("Adres e-mail")
             pw = st.text_input("Hasło", type="password")
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-            if st.button("Wejdź do centrum dowodzenia"):
+            if st.button("Zaloguj się do panelu"):
                 res = supabase.table('konta').select('*').eq('email', em).execute()
                 if res.data and res.data[0]['haslo'] == pw:
+                    if not res.data[0].get('zweryfikowany', True):
+                        st.warning("⚠️ Twój adres e-mail oczekuje na weryfikację. Na potrzeby dema logowanie zostało dopuszczone.")
                     st.session_state.auth_user = em
                     st.session_state.role = res.data[0]['rola']
                     st.rerun()
-                else: st.error("Nieprawidłowy e-mail lub hasło.")
+                else: st.error("Nieprawidłowy adres e-mail lub hasło.")
             st.markdown("</div>", unsafe_allow_html=True)
+            
         with t2:
             rem = st.text_input("Nowy adres e-mail")
             rpw = st.text_input("Nowe hasło", type="password", key="reg_pass")
             rnm = st.text_input("Imię lub pseudonim pilota")
             if st.button("Zarejestruj się"):
-                supabase.table('konta').insert({'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 'tokeny': 10, 'zadania': []}).execute()
-                st.success("Konto założone! Możesz się teraz zalogować.")
+                email_check = supabase.table('konta').select('email').eq('email', rem).execute()
+                
+                if email_check.data:
+                    st.error("Konto z tym adresem e-mail już istnieje w naszym systemie!")
+                else:
+                    is_valid, msg = is_password_strong(rpw)
+                    if not is_valid:
+                        st.error(msg)
+                    else:
+                        supabase.table('konta').insert({
+                            'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
+                            'tokeny': 10, 'zadania': [], 'zweryfikowany': False
+                        }).execute()
+                        st.success("Konto założone pomyślnie! Konieczna będzie weryfikacja e-mail, ale teraz możesz się zalogować.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -289,7 +353,7 @@ if user_data['rola'] == "Instruktor":
     col_nav, col_main = st.columns([1, 3])
     
     with col_nav:
-        st.markdown(f"<div class='bento-card'><p class='mono-text'>AKTYWNI KURSANCI</p>", unsafe_allow_html=True)
+        st.markdown(f"<div class='bento-card'><p class='mono-text'>TWOI KURSANCI</p>", unsafe_allow_html=True)
         cadets = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
         if not cadets: st.warning("Brak kursantów w bazie danych."); st.stop()
         selected_email = st.radio("Wybierz pilota:", [k['email'] for k in cadets], label_visibility="collapsed")
@@ -302,37 +366,41 @@ if user_data['rola'] == "Instruktor":
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("ZASIL"):
                 supabase.table('konta').update({"tokeny": target_data.get('tokeny', 0) + dodaj_tok}).eq('email', selected_email).execute()
-                st.toast("Zasilono konto.", icon="🟢")
+                st.toast("Zasilono konto ucznia.", icon="🟢")
                 time.sleep(1)
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<br><p class='mono-text'>KONFIGURACJA LOTU</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>DANE DO ANALIZY</p>", unsafe_allow_html=True)
         inst_env = st.selectbox("Środowisko", ["Lot rzeczywisty", "Symulator"])
         inst_ind = st.selectbox("Styl lotu", ["Cinematic / Płynny", "Racing (Wyścigi)", "Freestyle"]) if inst_env == "Lot rzeczywisty" else "Standard"
         inst_skill = st.selectbox("Poziom zaawansowania", ["Początkujący", "Średniozaawansowany", "Ekspert"])
         
+        st.markdown("<br><p class='mono-text'>UPRAWNIENIA</p>", unsafe_allow_html=True)
+        if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
+            supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
+            st.success(f"Użytkownik {target_data['imie']} otrzymał uprawnienia trenerskie!")
+            time.sleep(1)
+            st.rerun()
+
         st.markdown("<br><p class='mono-text'>OPCJE</p>", unsafe_allow_html=True)
         if st.button("Wyloguj się"): st.session_state.auth_user = None; st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_main:
-        st.markdown(f"<h2>Akta pilota: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']}</span></h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2>Profil kursanta: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']}</span></h2>", unsafe_allow_html=True)
         
-        # -----------------------------------------------------------
-        # STATYSTYKI KURSANTA DLA INSTRUKTORA (NOWOŚĆ)
-        # -----------------------------------------------------------
         zad = target_data.get('zadania', [])
         loty = [z for z in zad if isinstance(z, dict) and 'ocena' in z and z.get('type') != 'Mechanik AI']
         mech_uses = len([z for z in zad if isinstance(z, dict) and z.get('type') == 'Mechanik AI'])
         avg_score = sum(z['ocena'] for z in loty) / len(loty) if loty else 0
         
         st.markdown("<div class='bento-card' style='margin-bottom: 30px;'>", unsafe_allow_html=True)
-        st.markdown("<p class='mono-text' style='margin-bottom: 20px;'>PODSUMOWANIE AKTYWNOŚCI KURSANTA</p>", unsafe_allow_html=True)
+        st.markdown("<p class='mono-text' style='margin-bottom: 20px;'>PODSUMOWANIE POSTĘPÓW</p>", unsafe_allow_html=True)
         cm1, cm2, cm3 = st.columns(3)
         cm1.metric("Wykonane Analizy", len(loty))
         cm2.metric("Średnia Ocena AI", f"{avg_score:.1f}/10")
-        cm3.metric("Zapytania do Mechanika AI", mech_uses)
+        cm3.metric("Zapytania do Warsztatu AI", mech_uses)
         
         if len(loty) > 1:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -344,13 +412,13 @@ if user_data['rola'] == "Instruktor":
                 fig_prog_inst = go.Figure()
                 fig_prog_inst.add_trace(go.Scatter(x=dates, y=roll_jerks, mode='lines+markers', name='Roll Jerk', line=dict(color=ACCENT_LIGHT, width=2)))
                 fig_prog_inst.add_trace(go.Scatter(x=dates, y=pitch_jerks, mode='lines+markers', name='Pitch Jerk', line=dict(color='#FFFFFF', dash='dot')))
-                fig_prog_inst.update_layout(title="Historia płynności kursanta (im niżej tym lepiej)", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_prog_inst.update_layout(title="Historia płynności kursanta (im niżej, tym płynniejszy lot)", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_prog_inst, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
         
         c_upl, c_vid = st.columns(2)
         with c_upl: log_file = st.file_uploader("Wgraj plik z logami lotu (BBL/CSV)", type=['bbl', 'csv'], label_visibility="collapsed")
-        with c_vid: vid_link = st.text_input("Opcjonalny link do nagrania (YouTube)", placeholder="https://...")
+        with c_vid: vid_link = st.text_input("Opcjonalny link do nagrania (np. YouTube)", placeholder="https://...")
 
         df_active = None
         if log_file:
@@ -368,34 +436,37 @@ if user_data['rola'] == "Instruktor":
             stats = render_terminal_hud(df_active, mode="Real" if inst_env=="Lot rzeczywisty" else "Sim", premium=True)
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-            if st.button("GENERUJ RAPORT AI"):
+            if st.button("GENERUJ WSKAZÓWKI AI"):
                 if init_ai():
                     prompt = f"Instruktor FPV. Kursant: {inst_skill}, Styl: {inst_ind}. Płynność Roll: {stats['jr']:.2f}, G-Force: {stats['max_g']:.1f}G. Wygeneruj JSON: {{\"ocena\": 8, \"diagnoza\": \"...\", \"zadanie\": \"...\"}}"
                     raw = generate_intel(prompt)
                     try:
                         js = json.loads(raw.replace("```json","").replace("```","").strip())
-                        st.session_state.instructor_draft = f"### Analiza lotu: {inst_ind}\n**OCENA WYDAJNOŚCI:** {js['ocena']}/10\n\n**KOMENTARZ TRENERA:**\n{js['diagnoza']}\n\n**CEL TRENINGOWY:**\n{js['zadanie']}"
+                        st.session_state.instructor_draft = f"### Analiza lotu: {inst_ind}\n**OCENA LOTU:** {js['ocena']}/10\n\n**WSKAZÓWKI TRENERA:**\n{js['diagnoza']}\n\n**ZADANIE NA NASTĘPNY TRENING:**\n{js['zadanie']}"
                         st.session_state.temp_metrics = stats
-                    except: st.error("Błąd AI.")
+                    except: st.error("Wystąpił błąd w generowaniu odpowiedzi przez AI.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         if st.session_state.instructor_draft:
-            final_rep = st.text_area("Edytor", value=st.session_state.instructor_draft, height=250)
-            if st.button("ZATWIERDŹ I WYŚLIJ"):
-                match = re.search(r"OCENA WYDAJNOŚCI:\s*(\d+)/10", final_rep)
+            final_rep = st.text_area("Edytuj raport przed wysłaniem", value=st.session_state.instructor_draft, height=250)
+            if st.button("ZATWIERDŹ I WYŚLIJ DO KURSANTA"):
+                match = re.search(r"OCENA LOTU:\s*(\d+)/10", final_rep)
                 score = int(match.group(1)) if match else 5
                 new_record = {"data": datetime.now().strftime("%Y-%m-%d %H:%M"), "ocena": score, "raport": final_rep, "wideo": vid_link, "type": inst_ind, "premium": True, "stats": st.session_state.temp_metrics}
+                
                 history = target_data.get('zadania', [])
                 history.append(new_record)
+                history = history[-10:] # ZABEZPIECZENIE: Zapisujemy tylko 10 ostatnich akcji!
+                
                 supabase.table('konta').update({"zadania": history}).eq('email', selected_email).execute()
                 st.session_state.instructor_draft = None
                 st.rerun()
             
-        st.markdown("<br><p class='mono-text'>ARCHIWUM AKTYWNOŚCI KURSANTA</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>HISTORIA LOTÓW KURSANTA</p>", unsafe_allow_html=True)
         for z in reversed(target_data.get('zadania', [])):
             if isinstance(z, dict):
                 if z.get('type') == 'Mechanik AI':
-                    with st.expander(f"🤖 {z.get('data')} | Warsztat: Zapytanie do Mechanika AI"):
+                    with st.expander(f"🤖 {z.get('data')} | Warsztat: Zapytanie o pomoc techniczną"):
                         st.markdown(z.get('raport'))
                 else:
                     with st.expander(f"📄 {z.get('data')} | Ocena: {z.get('ocena')}/10"):
@@ -403,27 +474,33 @@ if user_data['rola'] == "Instruktor":
                         if 'stats' in z: 
                             render_history_stats(z['stats'])
                             html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], target_data['imie'])
-                            st.download_button(label="📥 Pobierz Dokument (PDF)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
+                            st.download_button(label="📥 Pobierz Dokument (PDF z Wykresami)", data=html_report, file_name=f"Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"inst_dl_{z.get('data')}")
 
 # ==========================================
-# 7. PANEL KURSANTA (NOWE ZAKŁADKI)
+# 7. PANEL KURSANTA
 # ==========================================
 else:
     with st.sidebar:
         st.markdown(f"<p class='mono-text'>ZALOGOWANY PILOT: <br><span style='color: {ACCENT_LIGHT}; font-size: 1.2em;'>{user_data['imie']}</span></p>", unsafe_allow_html=True)
         st.metric("DOSTĘPNE TOKENY", user_data.get('tokeny', 0))
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.info("💡 Gdy Instruktor prześle Ci nowy raport, użyj poniższego przycisku, aby odświeżyć dane bez wylogowywania się z konta.")
+        if st.button("🔄 Synchronizuj z serwerem", use_container_width=True): 
+            st.rerun()
+            
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Wyloguj się"): st.session_state.auth_user = None; st.rerun()
 
     if st.session_state.flow_state == 'launchpad':
         render_logo()
         
-        tab_main, tab_prog, tab_rank, tab_workshop = st.tabs(["🚀 Centrum Dowodzenia", "📈 Analiza Postępów", "🏆 Globalny Ranking", "🛠️ Warsztat FPV"])
+        tab_main, tab_prog, tab_rank, tab_workshop = st.tabs(["🚀 Panel Główny", "📈 Twoje Postępy", "🏆 Globalny Ranking", "🛠️ Warsztat FPV"])
         
         with tab_main:
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("<div class='bento-card'><h3>🚁 LOT RZECZYWISTY</h3><p class='mono-text'>Analiza logów (.BBL)</p></div>", unsafe_allow_html=True)
+                st.markdown("<div class='bento-card'><h3>🚁 LOT RZECZYWISTY</h3><p class='mono-text'>Analiza z plików drona (.BBL)</p></div>", unsafe_allow_html=True)
                 col_m, col_r, col_f = st.columns(3)
                 if col_m.button("Cinematic"): st.session_state.industry_select="Cinematic / Płynny"; st.session_state.env_select="Real"; st.rerun()
                 if col_r.button("Racing"): st.session_state.industry_select="Racing (Wyścigi)"; st.session_state.env_select="Real"; st.rerun()
@@ -435,18 +512,18 @@ else:
             
             if st.session_state.industry_select:
                 st.markdown("<br><h2>TWÓJ POZIOM DOŚWIADCZENIA</h2>", unsafe_allow_html=True)
-                skill = st.select_slider("Poziom do oceny AI:", options=["Początkujący", "Średniozaawansowany", "Ekspert"], value=st.session_state.skill_select, label_visibility="collapsed")
+                skill = st.select_slider("Poziom do oceny przez AI:", options=["Początkujący", "Średniozaawansowany", "Ekspert"], value=st.session_state.skill_select, label_visibility="collapsed")
                 st.session_state.skill_select = skill
                 
                 st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
                 if st.button("PRZEJDŹ DO WGRYWANIA PLIKU"): st.session_state.flow_state = 'upload'; st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            st.markdown("<br><p class='mono-text'>HISTORIA AKTYWNOŚCI</p>", unsafe_allow_html=True)
+            st.markdown("<br><p class='mono-text'>TWOJE OSTATNIE LOTY I WSKAZÓWKI</p>", unsafe_allow_html=True)
             for z in reversed(user_data.get('zadania', [])):
                 if isinstance(z, dict):
                     if z.get('type') == 'Mechanik AI':
-                        with st.expander(f"🤖 {z.get('data')} | Warsztat: Mechanik AI"):
+                        with st.expander(f"🤖 {z.get('data')} | Warsztat: Diagnoza sprzętu"):
                             st.markdown(z.get('raport'))
                     else:
                         icon = "🟢" if z.get('premium') else "📄"
@@ -455,13 +532,13 @@ else:
                             if 'stats' in z and z.get('premium'): 
                                 render_history_stats(z['stats'])
                                 html_report = generate_html_report(z.get('data'), z.get('ocena'), z.get('raport'), z['stats'], user_data['imie'])
-                                st.download_button(label="📥 Pobierz Raport (PDF)", data=html_report, file_name=f"FPV_Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"dl_{z.get('data')}")
+                                st.download_button(label="📥 Pobierz Raport (PDF z Wykresami)", data=html_report, file_name=f"FPV_Raport_{z.get('data').split(' ')[0]}.html", mime="text/html", key=f"dl_{z.get('data')}")
                 else:
                     with st.expander("Stare zapisy archiwalne"): st.markdown(str(z))
 
         with tab_prog:
             st.markdown("### Monitorowanie Płynności Lotu")
-            st.markdown("<p style='color: #8cbf8c;'>Śledź, jak na przestrzeni czasu zmniejsza się Twój wskaźnik szarpania drążkami (Jerk). Im niżej na wykresie, tym lepszy pilot!</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color: #8cbf8c;'>Śledź, jak na przestrzeni czasu rozwija się Twoja technika. Im niżej wykres schodzi w dół (mniejsze szarpanie drążkami), tym lepszym jesteś pilotem!</p>", unsafe_allow_html=True)
             history = [z for z in user_data.get('zadania', []) if isinstance(z, dict) and 'stats' in z and z.get('type') != 'Mechanik AI']
             if len(history) > 1:
                 dates = [z['data'] for z in history]
@@ -474,7 +551,7 @@ else:
                 fig_prog.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_prog, use_container_width=True)
             else:
-                st.info("Zrób co najmniej dwie analizy lotu, aby zobaczyć tutaj swój wykres postępu.")
+                st.info("Wykonaj co najmniej dwie analizy lotu, aby zobaczyć tutaj swój wykres postępu.")
 
         with tab_rank:
             st.markdown("### Top Piloci FPV Academy")
@@ -505,27 +582,27 @@ else:
             with w_mech:
                 st.markdown("### Sztuczna Inteligencja Serwisowa")
                 st.write("Opisz objawy, jakie daje Twój dron (np. wibracje przy opadaniu, gorące silniki), a AI postara się zdiagnozować usterkę.")
-                mech_query = st.text_area("Twój problem ze sprzętem:", placeholder="Np. Dron po zrobieniu flipa na chwilę traci moc i dziwnie wyje...")
+                mech_query = st.text_area("Opisz problem ze sprzętem:", placeholder="Np. Dron po zrobieniu flipa na chwilę traci moc i dziwnie wyje...")
                 st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-                if st.button("ZAPYTAJ MECHANIKA (-0 TOKENÓW)"):
+                if st.button("POPROŚ O DIAGNOZĘ (-0 TOKENÓW)"):
                     if mech_query and init_ai():
-                        with st.spinner("Mechanik analizuje objawy..."):
-                            prompt = f"Jesteś profesjonalnym serwisantem dronów FPV. Krótko i zwięźle pomóż rozwiązać problem użytkownika w punktach. Problem: {mech_query}"
+                        with st.spinner("Nasz mechanik analizuje problem..."):
+                            prompt = f"Jesteś przyjaznym i profesjonalnym serwisantem dronów FPV. Krótko i zwięźle pomóż rozwiązać problem użytkownika, udzielając porad w punktach. Problem: {mech_query}"
                             try:
                                 models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                                 best_model = next((m for m in models if '1.5-flash' in m), models[0])
                                 mech_resp = genai.GenerativeModel(best_model).generate_content(prompt).text
                                 
-                                # ZAPISANIE AKCJI DO HISTORII KURSANTA
                                 user_history = user_data.get('zadania', [])
                                 user_history.append({
                                     "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                     "type": "Mechanik AI",
                                     "raport": f"**Pytanie do systemu:** {mech_query}\n\n**Diagnoza Mechanika:**\n{mech_resp}"
                                 })
+                                user_history = user_history[-10:] # ZABEZPIECZENIE: Zapisujemy tylko 10 ostatnich akcji!
                                 supabase.table('konta').update({"zadania": user_history}).eq('email', user_data['email']).execute()
                                 
-                                st.success("Diagnoza zakończona (zapisano w Historii Lotów):")
+                                st.success("Analiza zakończona! Wskazówki zostały zapisane w Twojej historii lotów:")
                                 st.markdown(mech_resp)
                             except Exception as e:
                                 st.error(f"Błąd połączenia z modułem serwisowym AI. Upewnij się, że klucz API działa.")
@@ -542,7 +619,7 @@ else:
                     "7 Cali (Long Range)": {"Silniki": "2806.5 - 2809 (1300KV - 1500KV)", "Bateria": "6S Li-Ion (4000mAh) lub LiPo (2000mAh+)", "ESC": "50A - 60A", "Śmigła": "7 cali Bi-blade / Tri-blade (np. 7040)"}
                 }
                 
-                st.markdown(f"#### Zalecany setup dla: {frame_size}")
+                st.markdown(f"#### Zalecany sprzęt dla ramy: {frame_size}")
                 c1, c2 = st.columns(2)
                 with c1:
                     st.info(f"**⚡ Silniki (Statory & KV):**\n\n{specs[frame_size]['Silniki']}")
@@ -551,9 +628,6 @@ else:
                     st.info(f"**🔌 ESC (Regulator obrotów):**\n\n{specs[frame_size]['ESC']}")
                     st.info(f"**🚁 Śmigła (Props):**\n\n{specs[frame_size]['Śmigła']}")
 
-            # -----------------------------------------------------------
-            # ROZSZERZONA ŚCIĄGAWKA VTX (NOWOŚĆ Z WIELOMA PASMAMI)
-            # -----------------------------------------------------------
             with w_vtx:
                 st.markdown("### Pełna Macierz Częstotliwości VTX (5.8 GHz)")
                 st.write("Wszystkie najpopularniejsze pasma i kanały wideo używane w lotach FPV.")
@@ -571,24 +645,22 @@ else:
                 })
                 vtx_matrix = vtx_matrix.set_index('Pasmo')
                 
-                st.markdown("#### Inteligentny podział dla lotów grupowych (Miks Pasm)")
-                st.write("Dla większych grup system specjalnie miesza różne pasma (np. Fatshark z Racebandem), by zlikwidować zakłócenia wizji (IMD) i zagwarantować maksymalny odstęp między pilotami.")
+                st.markdown("#### Dobór częstotliwości do wspólnego latania")
+                st.write("Wybierz liczbę pilotów w grupie, a system podpowie optymalne kanały. Aplikacja upewnia się, że częstotliwości są od siebie możliwie daleko, by zlikwidować zakłócenia obrazu w goglach.")
                 pilots_count = st.slider("Ilu pilotów leci jednocześnie?", 1, 8, 4)
                 
-                # Zestawy częstotliwości eliminujące zjawisko IMD (maksymalizujące separację)
                 optimal_freqs = {
                     1: [5658],
                     2: [5658, 5917],
                     3: [5658, 5769, 5917],
                     4: [5658, 5732, 5843, 5917],
-                    5: [5645, 5705, 5769, 5843, 5917], # Wymieszane: E4, E1, R4, R6, R8
-                    6: [5645, 5695, 5760, 5800, 5860, 5917], # Wymieszane: E4, R2, F2, F4, F7, R8
-                    7: [5645, 5695, 5740, 5780, 5820, 5860, 5917], # Wymieszane: E4, R2, F1, F3, F5, F7, R8
-                    8: [5645, 5685, 5725, 5760, 5800, 5840, 5880, 5917] # Wymieszane: E4, E2, A8, F2, F4, F6, F8, R8
+                    5: [5645, 5705, 5769, 5843, 5917], 
+                    6: [5645, 5695, 5760, 5800, 5860, 5917], 
+                    7: [5645, 5695, 5740, 5780, 5820, 5860, 5917], 
+                    8: [5645, 5685, 5725, 5760, 5800, 5840, 5880, 5917] 
                 }
                 active_freqs = optimal_freqs[pilots_count]
                 
-                # Funkcja podświetlająca komórki z wybranymi częstotliwościami
                 def highlight_active(row):
                     return ['background-color: #336600; color: white; font-weight: bold' if val in active_freqs else '' for val in row]
                 
@@ -601,29 +673,29 @@ else:
                     5725: "A8", 5840: "F6", 5880: "R7"
                 }
                 ch_names = [freq_to_name.get(f, str(f)) for f in active_freqs]
-                st.success(f"Optymalny przydział kanałów dla {pilots_count} pilotów: **{', '.join(ch_names)}**")
+                st.success(f"Zalecane ułożenie kanałów dla {pilots_count} osób: **{', '.join(ch_names)}**")
 
             with w_dict:
-                st.markdown("### Słowniczek Żargonu Betaflight")
+                st.markdown("### Słowniczek FPV (Betaflight)")
                 
                 with st.expander("P-I-D (Proportional, Integral, Derivative)"):
                     st.write("**P (Proportional)** - Szybkość reakcji drona na drążki i wiatr. Zbyt niskie = dron 'pływa', zbyt wysokie = szybkie wibracje (oscylacje).")
-                    st.write("**I (Integral)** - Trzymanie zadanego kąta. Pomaga dronowi nie ulegać wpływom wiatru i środka ciężkości baterii.")
+                    st.write("**I (Integral)** - Trzymanie zadanego kąta. Pomaga dronowi nie ulegać wpływom wiatru i odchyleniom środka ciężkości baterii.")
                     st.write("**D (Derivative)** - 'Amortyzator' dla wartości P. Zapobiega przelatywaniu poza cel (overshoot) po ostrym manewrze. Zbyt wysokie D powoduje bardzo mocne grzanie silników.")
                 
                 with st.expander("Rates (RC Rate, Super Rate/Expo)"):
-                    st.write("**RC Rate** - Czułość na samym środku drążka. Im wyższa, tym szybciej dron reaguje na małe ruchy.")
-                    st.write("**Super Rate / Expo** - Czułość na samych krawędziach drążka. Pozwala na super szybkie flipy, zachowując przy tym miękki środek do płynnego lotu (Cinematic).")
+                    st.write("**RC Rate** - Czułość na samym środku drążka. Im wyższa, tym szybciej dron reaguje na najdrobniejsze ruchy palcami.")
+                    st.write("**Super Rate / Expo** - Czułość na samych krawędziach wychylenia drążka. Pozwala na super szybkie flipy i rolle, zachowując przy tym miękki środek niezbędny do płynnego lotu (Cinematic).")
                 
                 with st.expander("Propwash (Oscylacje po zejściu)"):
-                    st.write("Wibracje drona, które pojawiają się, gdy gwałtownie zawracasz lub opadasz pionowo we własne 'brudne powietrze' wyrzucone wcześniej przez śmigła. Zwalczamy to podnosząc wartość 'D' i optymalizując filtry.")
+                    st.write("Wibracje drona, które pojawiają się, gdy gwałtownie zawracasz lub opadasz pionowo we własne 'brudne powietrze' wyrzucone wcześniej przez śmigła. Zjawisko to redukujemy m.in. optymalizując wartość 'D' w Betaflight.")
                 
                 with st.expander("RPM Filtering (Filtry dwukierunkowe DShot)"):
-                    st.write("Bardzo zaawansowana funkcja, gdzie regulator ESC na żywo wysyła do kontrolera lotu informację z jaką prędkością obraca się każdy silnik. Dzięki temu Betaflight filtruje tylko te częstotliwości, które generują hałas z silników, oszczędzając czas procesora.")
+                    st.write("Bardzo zaawansowana funkcja, gdzie regulator ESC na żywo wysyła do kontrolera lotu informację z jaką prędkością obraca się każdy z czterech silników. Dzięki temu Betaflight filtruje tylko te konkretne częstotliwości, które generują wibracje z silników, pozwalając dronom latać znacznie czyściej.")
 
     elif st.session_state.flow_state == 'upload':
-        st.markdown(f"<h2>SEKWENCJA ANALIZY: <span style='color: {ACCENT_LIGHT};'>{st.session_state.industry_select.upper()}</span></h2>", unsafe_allow_html=True)
-        if st.button("← Wróć do menu głównego"): 
+        st.markdown(f"<h2>ANALIZA LOTU: <span style='color: {ACCENT_LIGHT};'>{st.session_state.industry_select.upper()}</span></h2>", unsafe_allow_html=True)
+        if st.button("← Wróć do panelu głównego"): 
             st.session_state.flow_state = 'launchpad'
             st.session_state.env_select = None
             st.session_state.industry_select = None
@@ -639,13 +711,13 @@ else:
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c_drop:
-            u_log = st.file_uploader("Upuść plik telemetrii w tym miejscu (.bbl lub .csv)", type=['bbl', 'csv'], label_visibility="collapsed")
+            u_log = st.file_uploader("Upuść plik z logami z lotu (.bbl lub .csv)", type=['bbl', 'csv'], label_visibility="collapsed")
             
             if u_log:
                 st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-                if st.button(f"ROZPOCZNIJ PRZETWARZANIE (-{cost} TOKENÓW)"):
+                if st.button(f"ROZPOCZNIJ ANALIZĘ (-{cost} TOKENÓW)"):
                     if user_data.get('tokeny', 0) >= cost:
-                        with st.status("Trwa analizowanie fizyki lotu...", expanded=True) as status:
+                        with st.status("Trwa wczytywanie i analiza danych...", expanded=True) as status:
                             dec = get_decoder()
                             with open("/tmp/u.bbl", "wb") as f: f.write(u_log.getbuffer())
                             subprocess.run([dec, "/tmp/u.bbl"], stdout=subprocess.DEVNULL)
@@ -656,12 +728,12 @@ else:
                                 stats = render_terminal_hud(df, mode=st.session_state.env_select, premium=(cost==2))
                                 
                                 if init_ai():
-                                    prompt = f"Instruktor FPV. Pilot: {user_data['imie']}, Poziom: {st.session_state.skill_select}, Styl: {st.session_state.industry_select}. Płynność Roll: {stats['jr']:.2f}, Max G: {stats['max_g']:.1f}G. Wygeneruj czysty JSON: {{\"ocena\": 8, \"diagnoza\": \"...\", \"zadanie\": \"...\"}}"
+                                    prompt = f"Trener personalny FPV. Uczeń: {user_data['imie']}, Poziom: {st.session_state.skill_select}, Styl: {st.session_state.industry_select}. Płynność Roll: {stats['jr']:.2f}, Max G: {stats['max_g']:.1f}G. Bądź przyjazny, zachęcaj do ćwiczeń. Wygeneruj czysty JSON: {{\"ocena\": 8, \"diagnoza\": \"...\", \"zadanie\": \"...\"}}"
                                     raw_ai = generate_intel(prompt)
                                     try:
                                         js = json.loads(raw_ai.replace("```json","").replace("```","").strip())
-                                        tag = "ANALIZA PREMIUM" if cost == 2 else "ANALIZA STANDARDOWA"
-                                        txt = f"### {tag}\n**SKUTECZNOŚĆ OPERACYJNA:** {js['ocena']}/10\n\n**DIAGNOZA SYSTEMOWA:**\n{js['diagnoza']}\n\n**CEL TRENINGOWY:**\n{js['zadanie']}"
+                                        tag = "RAPORT PREMIUM" if cost == 2 else "RAPORT STANDARDOWY"
+                                        txt = f"### {tag}\n**OCENA LOTU:** {js['ocena']}/10\n\n**WSKAZÓWKI TRENERA:**\n{js['diagnoza']}\n\n**ZADANIE NA NASTĘPNY TRENING:**\n{js['zadanie']}"
                                         
                                         history = user_data.get('zadania', [])
                                         history.append({
@@ -669,15 +741,16 @@ else:
                                             "raport": txt, "type": st.session_state.industry_select, 
                                             "premium": (cost==2), "stats": stats
                                         })
+                                        history = history[-10:] # ZABEZPIECZENIE: Zapisujemy tylko 10 ostatnich akcji!
                                         
                                         supabase.table('konta').update({
                                             "zadania": history, "tokeny": user_data['tokeny'] - cost
                                         }).eq('email', user_data['email']).execute()
                                         
-                                        status.update(label="Analiza zakończona sukcesem.", state="complete", expanded=False)
+                                        status.update(label="Gotowe! Wyniki zapisane w Twoim profilu.", state="complete", expanded=False)
                                         time.sleep(1)
                                         st.session_state.flow_state = 'launchpad' 
                                         st.rerun()
-                                    except: st.error("Wystąpił problem z systemem AI.")
-                    else: st.error("Niewystarczająca liczba tokenów na koncie.")
+                                    except: st.error("Niestety wystąpił problem podczas łączenia się z modułem AI.")
+                    else: st.error("Niewystarczająca liczba tokenów na koncie, aby rozpocząć.")
                 st.markdown("</div>", unsafe_allow_html=True)
