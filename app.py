@@ -193,19 +193,25 @@ def render_terminal_hud(df, mode="Real", premium=False):
     jy = df[yaw].diff().abs().mean() if yaw else 0
     smoothness = max(0, 10 - ((jr + jp + jy) * 0.8))
     avg_t = df[thr].mean()
-    max_g = g_vector.max() if has_acc and 'g_vector' in locals() else (np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2)/2048.0).max() if has_acc else 1.0
-    health = max(0, min(100, 100 - ((jr + jp) * 12)))
+    
+    max_g = 1.0
+    if has_acc:
+        g_vector = np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2) / 2048.0
+        max_g = g_vector.max()
 
     st.markdown("<p class='mono-text'>WYNIKI TELEMETRII</p>", unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Płynność lotu", f"{smoothness:.1f} / 10")
     m2.metric("Średni gaz", f"{avg_t:.0f}")
     m3.metric("Max przeciążenie", f"{max_g:.1f} G" if has_acc else "Brak danych")
+    
+    health = max(0, min(100, 100 - ((jr + jp) * 12)))
     m4.metric("Kondycja drona", f"{health:.0f}%")
 
     if premium:
         st.markdown("<br><p class='mono-text'>ANALIZA ZAAWANSOWANA (PREMIUM)</p>", unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["Telemetria drążków", "Analiza przeciążeń (G-Force)", "Trajektoria 3D", "Silniki i zasilanie"])
+        
         pdf = df.iloc[::max(1, len(df)//3000)]
         
         with t1:
@@ -227,7 +233,8 @@ def render_terminal_hud(df, mode="Real", premium=False):
             else: st.info("Brak danych G-Force.")
 
         with t3:
-            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), mode='lines', line=dict(color=pdf[thr], colorscale='Greens', width=6))])
+            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
+                                mode='lines', line=dict(color=pdf[thr], colorscale='Greens', width=6))])
             fig3.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', scene=dict(bgcolor='rgba(0,0,0,0)'))
             st.plotly_chart(fig3, use_container_width=True)
             
@@ -235,20 +242,23 @@ def render_terminal_hud(df, mode="Real", premium=False):
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
             mot_cols = [c for c in df.columns if 'motor[' in c.lower() or 'motor0' in c.lower()]
             has_data = False
+            
             if mot_cols and len(mot_cols) >= 4:
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
+            
             if v_col and mode == "Real":
                 has_data = True
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
-                f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+                f_bat.update_layout(title="Spadek napięcia a gaz", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
-            if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
+                
+            if not has_data: st.info("Brak danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
@@ -268,8 +278,6 @@ if st.session_state.auth_user is None:
             if st.button("Zaloguj się do panelu"):
                 res = supabase.table('konta').select('*').eq('email', em).execute()
                 if res.data and res.data[0]['haslo'] == pw:
-                    if not res.data[0].get('zweryfikowany', True):
-                        st.warning("⚠️ Twój adres e-mail oczekuje na weryfikację. Na potrzeby dema logowanie zostało dopuszczone.")
                     st.session_state.auth_user = em
                     st.session_state.role = res.data[0]['rola']
                     st.rerun()
@@ -289,15 +297,17 @@ if st.session_state.auth_user is None:
                     if not is_valid:
                         st.error(msg)
                     else:
+                        # Zmieniono insert, by pasował do bazy bez wywoływania APIError
                         supabase.table('konta').insert({
                             'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
-                            'tokeny': 10, 'zadania': [], 'zweryfikowany': False
+                            'tokeny': 10, 'zadania': []
                         }).execute()
-                        st.success("Konto założone pomyślnie! Konieczna będzie weryfikacja e-mail, ale teraz możesz się zalogować.")
+                        st.success("Konto założone pomyślnie! Możesz się teraz zalogować.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 user_data = supabase.table('konta').select('*').eq('email', st.session_state.auth_user).execute().data[0]
+is_admin = user_data['rola'].lower() == 'admin'
 
 def render_history_stats(stats_dict):
     st.markdown("<p class='mono-text' style='margin-top: 15px;'>METRYKI ZAPISANE W BAZIE</p>", unsafe_allow_html=True)
@@ -308,21 +318,21 @@ def render_history_stats(stats_dict):
     c4.metric("Max G", f"{stats_dict.get('max_g', 0):.1f} G")
 
 # ==========================================
-# 6. PANEL INSTRUKTORA / ADMINA
+# 6. PANEL INSTRUKTORA ORAZ ADMINA
 # ==========================================
-if user_data['rola'] in ["Instruktor", "Admin"]:
+if user_data['rola'].lower() in ["instruktor", "admin"]:
     render_logo()
     col_nav, col_main = st.columns([1, 3])
     
     with col_nav:
-        if user_data['rola'] == "Admin":
-            st.markdown(f"<div class='bento-card'><p class='mono-text'>WSZYSCY UŻYTKOWNICY (ADMIN)</p>", unsafe_allow_html=True)
+        if is_admin:
+            st.markdown(f"<div class='bento-card'><p class='mono-text'>ZARZĄDZANIE (ADMIN)</p>", unsafe_allow_html=True)
             cadets = supabase.table('konta').select('*').neq('email', user_data['email']).execute().data
         else:
             st.markdown(f"<div class='bento-card'><p class='mono-text'>TWOI KURSANCI</p>", unsafe_allow_html=True)
             cadets = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
             
-        if not cadets: st.warning("Brak użytkowników do wyświetlenia."); st.stop()
+        if not cadets: st.warning("Brak użytkowników w bazie danych."); st.stop()
         
         selected_email = st.radio("Wybierz użytkownika:", [k['email'] for k in cadets], label_visibility="collapsed")
         target_data = next(k for k in cadets if k['email'] == selected_email)
@@ -344,19 +354,19 @@ if user_data['rola'] in ["Instruktor", "Admin"]:
         inst_ind = st.selectbox("Styl lotu", ["Cinematic / Płynny", "Racing (Wyścigi)", "Freestyle"]) if inst_env == "Lot rzeczywisty" else "Standard"
         inst_skill = st.selectbox("Poziom zaawansowania", ["Początkujący", "Średniozaawansowany", "Ekspert"])
         
-        # Opcje dostępne TYLKO dla Admina
-        if user_data['rola'] == 'Admin':
-            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KADRĄ (ADMIN)</p>", unsafe_allow_html=True)
-            if target_data['rola'] == 'Kursant':
+        # PANELE DOSTĘPNE TYLKO DLA ADMINA (Nadawanie i Odbieranie Ról)
+        if is_admin:
+            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KADRĄ</p>", unsafe_allow_html=True)
+            if target_data['rola'].lower() == 'kursant':
                 if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
                     supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
-                    st.success(f"Użytkownik {target_data['imie']} otrzymał uprawnienia trenerskie!")
+                    st.success(f"{target_data['imie']} otrzymał uprawnienia trenerskie!")
                     time.sleep(1)
                     st.rerun()
-            elif target_data['rola'] == 'Instruktor':
+            elif target_data['rola'].lower() == 'instruktor':
                 if st.button("🔻 Odbierz Rangę Instruktora", use_container_width=True):
                     supabase.table('konta').update({"rola": "Kursant"}).eq('email', selected_email).execute()
-                    st.warning(f"Użytkownik {target_data['imie']} został zdegradowany do roli Kursanta.")
+                    st.warning(f"{target_data['imie']} został zdegradowany do roli Kursanta.")
                     time.sleep(1)
                     st.rerun()
 
@@ -365,7 +375,24 @@ if user_data['rola'] in ["Instruktor", "Admin"]:
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_main:
-        st.markdown(f"<h2>Profil wybranego konta: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']} ({target_data['rola']})</span></h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2>Profil użytkownika: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']} ({target_data['rola']})</span></h2>", unsafe_allow_html=True)
+        
+        # EDYCJA DANYCH PRZEZ ADMINA
+        if is_admin:
+            with st.expander("⚙️ Edycja danych użytkownika (Tylko Admin)"):
+                with st.form("edit_user_form"):
+                    e_imie = st.text_input("Imię / Pseudonim", value=target_data['imie'])
+                    e_email = st.text_input("Adres E-mail", value=target_data['email'])
+                    e_haslo = st.text_input("Hasło", value=target_data['haslo'])
+                    if st.form_submit_button("Zapisz zmiany w bazie"):
+                        supabase.table('konta').update({
+                            'imie': e_imie,
+                            'email': e_email,
+                            'haslo': e_haslo
+                        }).eq('email', target_data['email']).execute()
+                        st.success("Zaktualizowano dane użytkownika!")
+                        time.sleep(1)
+                        st.rerun()
         
         zad = target_data.get('zadania', [])
         loty = [z for z in zad if isinstance(z, dict) and 'ocena' in z and z.get('type') != 'Mechanik AI']
