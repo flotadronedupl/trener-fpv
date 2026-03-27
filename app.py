@@ -81,6 +81,10 @@ st.markdown(f"""
     .stDataFrame {{ background: rgba(10, 15, 10, 0.6); border-radius: 10px; }}
     section[data-testid="stSidebar"] {{ background-color: rgba(5, 10, 5, 0.95) !important; border-right: 1px solid rgba(51,102,0,0.2); backdrop-filter: blur(20px); }}
     #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}} header {{visibility: hidden;}}
+    
+    /* Dodatkowe style dla przycisku usuwania konta */
+    .danger-btn>button {{ border: 1px solid #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.1); }}
+    .danger-btn>button:hover {{ background: #ef4444; color: #ffffff; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -378,7 +382,7 @@ if is_instructor:
         # PANEL ZARZĄDZANIA KADRĄ I WERYFIKACJĄ (TYLKO ADMIN)
         # ----------------------------------------------------
         if is_admin:
-            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KONTA (ADMIN)</p>", unsafe_allow_html=True)
+            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KONTAMI (ADMIN)</p>", unsafe_allow_html=True)
             
             # 1. PRZYCISK RĘCZNEJ WERYFIKACJI
             if not target_data.get('zweryfikowany', True):
@@ -409,6 +413,7 @@ if is_instructor:
     with col_main:
         st.markdown(f"<h2>Profil użytkownika: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']} ({target_data['rola']})</span></h2>", unsafe_allow_html=True)
         
+        # EDYCJA DANYCH I USUWANIE KONTA PRZEZ ADMINA
         if is_admin:
             with st.expander("⚙️ Edycja danych użytkownika (Tylko Admin)"):
                 with st.form("edit_user_form"):
@@ -424,6 +429,16 @@ if is_instructor:
                         st.success("Zaktualizowano dane użytkownika!")
                         time.sleep(1)
                         st.rerun()
+                
+                st.markdown("<hr style='border-color: #334155;'>", unsafe_allow_html=True)
+                st.markdown("<p style='color: #ef4444; font-weight: bold; margin-bottom: 5px;'>Strefa Niebezpieczna</p>", unsafe_allow_html=True)
+                st.markdown("<div class='danger-btn'>", unsafe_allow_html=True)
+                if st.button("🗑️ USUŃ TO KONTO BEZPOWROTNIE", use_container_width=True):
+                    supabase.table('konta').delete().eq('email', target_data['email']).execute()
+                    st.error(f"Konto użytkownika {target_data['imie']} zostało pomyślnie i bezpowrotnie usunięte z systemu.")
+                    time.sleep(1.5)
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
         
         zad = target_data.get('zadania', [])
         loty = [z for z in zad if isinstance(z, dict) and 'ocena' in z and z.get('type') != 'Mechanik AI']
