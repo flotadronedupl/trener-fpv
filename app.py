@@ -74,11 +74,10 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
+# KULOODPORNE LOGO 
 def render_logo():
-    logo_html = f"""<div style='text-align:center; padding-bottom:3rem; display:flex; flex-direction:column; align-items:center;'><svg width='80' height='80' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01' stroke='{ACCENT_LIGHT}' stroke-width='3' stroke-linecap='round'/><path d='M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5' stroke='#4d9900' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='3' fill='#050a0a' stroke='{ACCENT_LIGHT}' stroke-width='2'/></svg><h1 style='font-size:3rem; margin:10px 0 0 0; background:linear-gradient(90deg, #FFFFFF, #8cbf8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>FPV AI Academy</h1><p style='color:#64748B; font-size:1.1rem; margin-top:0.5rem; font-weight:600; letter-spacing:2px;'>NEXT-GEN FLIGHT ANALYTICS</p></div>"""
-    st.markdown(logo_html, unsafe_allow_html=True)
+    st.write("<div style='text-align:center; padding-bottom:3rem; display:flex; flex-direction:column; align-items:center;'><svg width='80' height='80' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5h.01M18.5 5.5h.01M5.5 18.5h.01M18.5 18.5h.01' stroke='#4d9900' stroke-width='3' stroke-linecap='round'/><path d='M12 12L5.5 5.5M12 12l6.5-6.5M12 12l-6.5 6.5M12 12l6.5 6.5' stroke='#4d9900' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='3' fill='#050a0a' stroke='#4d9900' stroke-width='2'/></svg><h1 style='font-size:3rem; margin:10px 0 0 0; background:linear-gradient(90deg, #FFFFFF, #8cbf8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>FPV AI Academy</h1><p style='color:#64748B; font-size:1.1rem; margin-top:0.5rem; font-weight:600; letter-spacing:2px;'>NEXT-GEN FLIGHT ANALYTICS</p></div>", unsafe_allow_html=True)
 
-# BEZPIECZNY GENERATOR RAPORTÓW (Bez biblioteki markdown)
 def generate_html_report(date, score, report_text, stats_dict, pilot_name):
     # Prosty wbudowany parser Markdown
     html_text = report_text.replace('<', '&lt;').replace('>', '&gt;')
@@ -478,11 +477,15 @@ else:
                         with st.spinner("Mechanik analizuje objawy..."):
                             prompt = f"Jesteś profesjonalnym serwisantem dronów FPV. Krótko i zwięźle pomóż rozwiązać problem użytkownika w punktach. Problem: {mech_query}"
                             try:
-                                mech_resp = genai.GenerativeModel('gemini-1.5-flash').generate_content(prompt).text
+                                # Używamy tego samego, bezpiecznego mechanizmu co w głównym module
+                                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                best_model = next((m for m in models if '1.5-flash' in m), models[0])
+                                mech_resp = genai.GenerativeModel(best_model).generate_content(prompt).text
+                                
                                 st.success("Diagnoza zakończona:")
                                 st.markdown(mech_resp)
-                            except:
-                                st.error("Błąd połączenia z modułem serwisowym AI.")
+                            except Exception as e:
+                                st.error(f"Błąd połączenia z modułem serwisowym AI. Upewnij się, że klucz API działa. Szegóły błędu: {e}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with w_calc:
