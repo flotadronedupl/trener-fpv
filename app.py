@@ -93,14 +93,13 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
     html_text = re.sub(r'### (.*)', r'<h3>\1</h3>', html_text)
     html_text = html_text.replace('\n', '<br>')
     
-    # Obliczenia proporcji dla pasków wizualnych w PDF
     health_pct = max(0, min(100, stats_dict.get('health', 0)))
     roll_jerk = stats_dict.get('jr', 0)
-    roll_pct = max(0, min(100, 100 - (roll_jerk * 12))) # Im mniejszy jerk, tym dluższy pasek
+    roll_pct = max(0, min(100, 100 - (roll_jerk * 12)))
     pitch_jerk = stats_dict.get('jp', 0)
     pitch_pct = max(0, min(100, 100 - (pitch_jerk * 12)))
     max_g = stats_dict.get('max_g', 1)
-    g_pct = max(0, min(100, (max_g / 10.0) * 100)) # Zakładamy 10G jako 100% skali
+    g_pct = max(0, min(100, (max_g / 10.0) * 100))
     
     html = f"""
     <html>
@@ -111,8 +110,6 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
             h1 {{ color: {PRIMARY_COLOR}; border-bottom: 2px solid {PRIMARY_COLOR}; padding-bottom: 10px; margin-bottom: 5px; }}
             .header {{ text-align: center; margin-bottom: 30px; }}
             .score {{ font-size: 2.5em; color: {PRIMARY_COLOR}; font-weight: bold; text-align: center; margin-bottom: 20px; }}
-            
-            /* Style dla wykresów słupkowych */
             .charts-container {{ background: #f9fdf9; border: 1px solid #e0e0e0; padding: 25px; border-radius: 12px; margin-bottom: 30px; }}
             .chart-title {{ font-size: 1.1em; font-weight: bold; margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }}
             .bar-row {{ margin-bottom: 12px; }}
@@ -120,7 +117,6 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
             .bar-bg {{ width: 100%; background-color: #e0e0e0; border-radius: 6px; height: 16px; overflow: hidden; }}
             .bar-fill {{ height: 100%; background-color: {ACCENT_LIGHT}; border-radius: 6px; }}
             .bar-fill.gforce {{ background-color: #d9534f; }}
-            
             .content-box {{ margin-top: 20px; padding: 25px; background: #fafafa; border-radius: 12px; border-left: 5px solid {ACCENT_LIGHT}; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
         </style>
     </head>
@@ -129,38 +125,15 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
             <h1>Raport Treningowy FPV</h1>
             <p style="color: #666; font-size: 1.1em;">Data lotu: <b>{date}</b> | Pilot: <b>{pilot_name}</b></p>
         </div>
-        
         <div class="score">Ocena lotu: {score}/10</div>
-        
         <div class="charts-container">
             <div class="chart-title">Analiza Telemetryczna (Wizualizacja)</div>
-            
-            <div class="bar-row">
-                <div class="bar-label"><span>Kondycja maszyny (Brak wibracji)</span><span>{health_pct:.0f}%</span></div>
-                <div class="bar-bg"><div class="bar-fill" style="width: {health_pct}%;"></div></div>
-            </div>
-            
-            <div class="bar-row">
-                <div class="bar-label"><span>Płynność Osi Roll (Mniej szarpania = lepiej)</span><span>{roll_jerk:.2f} Wskaźnika</span></div>
-                <div class="bar-bg"><div class="bar-fill" style="width: {roll_pct}%;"></div></div>
-            </div>
-            
-            <div class="bar-row">
-                <div class="bar-label"><span>Płynność Osi Pitch (Mniej szarpania = lepiej)</span><span>{pitch_jerk:.2f} Wskaźnika</span></div>
-                <div class="bar-bg"><div class="bar-fill" style="width: {pitch_pct}%;"></div></div>
-            </div>
-            
-            <div class="bar-row">
-                <div class="bar-label"><span>Max Przeciążenie (G-Force)</span><span>{max_g:.1f} G</span></div>
-                <div class="bar-bg"><div class="bar-fill gforce" style="width: {g_pct}%;"></div></div>
-            </div>
+            <div class="bar-row"><div class="bar-label"><span>Kondycja maszyny</span><span>{health_pct:.0f}%</span></div><div class="bar-bg"><div class="bar-fill" style="width: {health_pct}%;"></div></div></div>
+            <div class="bar-row"><div class="bar-label"><span>Płynność Osi Roll (Mniej = lepiej)</span><span>{roll_jerk:.2f}</span></div><div class="bar-bg"><div class="bar-fill" style="width: {roll_pct}%;"></div></div></div>
+            <div class="bar-row"><div class="bar-label"><span>Płynność Osi Pitch (Mniej = lepiej)</span><span>{pitch_jerk:.2f}</span></div><div class="bar-bg"><div class="bar-fill" style="width: {pitch_pct}%;"></div></div></div>
+            <div class="bar-row"><div class="bar-label"><span>Max Przeciążenie</span><span>{max_g:.1f} G</span></div><div class="bar-bg"><div class="bar-fill gforce" style="width: {g_pct}%;"></div></div></div>
         </div>
-        
         <div class="content-box">{html_text}</div>
-        
-        <p style="margin-top: 50px; text-align: center; color: #aaa; font-size: 0.85em; border-top: 1px solid #eee; padding-top: 20px;">
-            Dokument wygenerowany automatycznie przez inteligentny system <b>FPV AI Academy</b>.
-        </p>
     </body>
     </html>
     """
@@ -220,25 +193,19 @@ def render_terminal_hud(df, mode="Real", premium=False):
     jy = df[yaw].diff().abs().mean() if yaw else 0
     smoothness = max(0, 10 - ((jr + jp + jy) * 0.8))
     avg_t = df[thr].mean()
-    
-    max_g = 1.0
-    if has_acc:
-        g_vector = np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2) / 2048.0
-        max_g = g_vector.max()
+    max_g = g_vector.max() if has_acc and 'g_vector' in locals() else (np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2)/2048.0).max() if has_acc else 1.0
+    health = max(0, min(100, 100 - ((jr + jp) * 12)))
 
     st.markdown("<p class='mono-text'>WYNIKI TELEMETRII</p>", unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Płynność lotu", f"{smoothness:.1f} / 10")
     m2.metric("Średni gaz", f"{avg_t:.0f}")
     m3.metric("Max przeciążenie", f"{max_g:.1f} G" if has_acc else "Brak danych")
-    
-    health = max(0, min(100, 100 - ((jr + jp) * 12)))
     m4.metric("Kondycja drona", f"{health:.0f}%")
 
     if premium:
         st.markdown("<br><p class='mono-text'>ANALIZA ZAAWANSOWANA (PREMIUM)</p>", unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["Telemetria drążków", "Analiza przeciążeń (G-Force)", "Trajektoria 3D", "Silniki i zasilanie"])
-        
         pdf = df.iloc[::max(1, len(df)//3000)]
         
         with t1:
@@ -260,8 +227,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
             else: st.info("Brak danych G-Force.")
 
         with t3:
-            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
-                                mode='lines', line=dict(color=pdf[thr], colorscale='Greens', width=6))])
+            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), mode='lines', line=dict(color=pdf[thr], colorscale='Greens', width=6))])
             fig3.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', scene=dict(bgcolor='rgba(0,0,0,0)'))
             st.plotly_chart(fig3, use_container_width=True)
             
@@ -269,14 +235,12 @@ def render_terminal_hud(df, mode="Real", premium=False):
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
             mot_cols = [c for c in df.columns if 'motor[' in c.lower() or 'motor0' in c.lower()]
             has_data = False
-            
             if mot_cols and len(mot_cols) >= 4:
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
                 fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
-            
             if v_col and mode == "Real":
                 has_data = True
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
@@ -284,7 +248,6 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
                 f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
-                
             if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
@@ -319,7 +282,6 @@ if st.session_state.auth_user is None:
             rnm = st.text_input("Imię lub pseudonim pilota")
             if st.button("Zarejestruj się"):
                 email_check = supabase.table('konta').select('email').eq('email', rem).execute()
-                
                 if email_check.data:
                     st.error("Konto z tym adresem e-mail już istnieje w naszym systemie!")
                 else:
@@ -346,17 +308,23 @@ def render_history_stats(stats_dict):
     c4.metric("Max G", f"{stats_dict.get('max_g', 0):.1f} G")
 
 # ==========================================
-# 6. PANEL INSTRUKTORA
+# 6. PANEL INSTRUKTORA / ADMINA
 # ==========================================
-if user_data['rola'] == "Instruktor":
+if user_data['rola'] in ["Instruktor", "Admin"]:
     render_logo()
     col_nav, col_main = st.columns([1, 3])
     
     with col_nav:
-        st.markdown(f"<div class='bento-card'><p class='mono-text'>TWOI KURSANCI</p>", unsafe_allow_html=True)
-        cadets = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
-        if not cadets: st.warning("Brak kursantów w bazie danych."); st.stop()
-        selected_email = st.radio("Wybierz pilota:", [k['email'] for k in cadets], label_visibility="collapsed")
+        if user_data['rola'] == "Admin":
+            st.markdown(f"<div class='bento-card'><p class='mono-text'>WSZYSCY UŻYTKOWNICY (ADMIN)</p>", unsafe_allow_html=True)
+            cadets = supabase.table('konta').select('*').neq('email', user_data['email']).execute().data
+        else:
+            st.markdown(f"<div class='bento-card'><p class='mono-text'>TWOI KURSANCI</p>", unsafe_allow_html=True)
+            cadets = supabase.table('konta').select('*').eq('rola', 'Kursant').execute().data
+            
+        if not cadets: st.warning("Brak użytkowników do wyświetlenia."); st.stop()
+        
+        selected_email = st.radio("Wybierz użytkownika:", [k['email'] for k in cadets], label_visibility="collapsed")
         target_data = next(k for k in cadets if k['email'] == selected_email)
         
         st.markdown(f"<br><p class='mono-text'>STAN KONTA: <span style='color: {ACCENT_LIGHT}; font-weight: bold;'>{target_data.get('tokeny', 0)} Tokenów</span></p>", unsafe_allow_html=True)
@@ -366,7 +334,7 @@ if user_data['rola'] == "Instruktor":
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("ZASIL"):
                 supabase.table('konta').update({"tokeny": target_data.get('tokeny', 0) + dodaj_tok}).eq('email', selected_email).execute()
-                st.toast("Zasilono konto ucznia.", icon="🟢")
+                st.toast("Zasilono konto użytkownika.", icon="🟢")
                 time.sleep(1)
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
@@ -376,19 +344,28 @@ if user_data['rola'] == "Instruktor":
         inst_ind = st.selectbox("Styl lotu", ["Cinematic / Płynny", "Racing (Wyścigi)", "Freestyle"]) if inst_env == "Lot rzeczywisty" else "Standard"
         inst_skill = st.selectbox("Poziom zaawansowania", ["Początkujący", "Średniozaawansowany", "Ekspert"])
         
-        st.markdown("<br><p class='mono-text'>UPRAWNIENIA</p>", unsafe_allow_html=True)
-        if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
-            supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
-            st.success(f"Użytkownik {target_data['imie']} otrzymał uprawnienia trenerskie!")
-            time.sleep(1)
-            st.rerun()
+        # Opcje dostępne TYLKO dla Admina
+        if user_data['rola'] == 'Admin':
+            st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KADRĄ (ADMIN)</p>", unsafe_allow_html=True)
+            if target_data['rola'] == 'Kursant':
+                if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
+                    supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
+                    st.success(f"Użytkownik {target_data['imie']} otrzymał uprawnienia trenerskie!")
+                    time.sleep(1)
+                    st.rerun()
+            elif target_data['rola'] == 'Instruktor':
+                if st.button("🔻 Odbierz Rangę Instruktora", use_container_width=True):
+                    supabase.table('konta').update({"rola": "Kursant"}).eq('email', selected_email).execute()
+                    st.warning(f"Użytkownik {target_data['imie']} został zdegradowany do roli Kursanta.")
+                    time.sleep(1)
+                    st.rerun()
 
         st.markdown("<br><p class='mono-text'>OPCJE</p>", unsafe_allow_html=True)
         if st.button("Wyloguj się"): st.session_state.auth_user = None; st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_main:
-        st.markdown(f"<h2>Profil kursanta: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']}</span></h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2>Profil wybranego konta: <span style='color:{ACCENT_LIGHT}'>{target_data['imie']} ({target_data['rola']})</span></h2>", unsafe_allow_html=True)
         
         zad = target_data.get('zadania', [])
         loty = [z for z in zad if isinstance(z, dict) and 'ocena' in z and z.get('type') != 'Mechanik AI']
@@ -449,20 +426,20 @@ if user_data['rola'] == "Instruktor":
 
         if st.session_state.instructor_draft:
             final_rep = st.text_area("Edytuj raport przed wysłaniem", value=st.session_state.instructor_draft, height=250)
-            if st.button("ZATWIERDŹ I WYŚLIJ DO KURSANTA"):
+            if st.button("ZATWIERDŹ I WYŚLIJ DO UŻYTKOWNIKA"):
                 match = re.search(r"OCENA LOTU:\s*(\d+)/10", final_rep)
                 score = int(match.group(1)) if match else 5
                 new_record = {"data": datetime.now().strftime("%Y-%m-%d %H:%M"), "ocena": score, "raport": final_rep, "wideo": vid_link, "type": inst_ind, "premium": True, "stats": st.session_state.temp_metrics}
                 
                 history = target_data.get('zadania', [])
                 history.append(new_record)
-                history = history[-10:] # ZABEZPIECZENIE: Zapisujemy tylko 10 ostatnich akcji!
+                history = history[-10:]
                 
                 supabase.table('konta').update({"zadania": history}).eq('email', selected_email).execute()
                 st.session_state.instructor_draft = None
                 st.rerun()
             
-        st.markdown("<br><p class='mono-text'>HISTORIA LOTÓW KURSANTA</p>", unsafe_allow_html=True)
+        st.markdown("<br><p class='mono-text'>HISTORIA AKTYWNOŚCI UŻYTKOWNIKA</p>", unsafe_allow_html=True)
         for z in reversed(target_data.get('zadania', [])):
             if isinstance(z, dict):
                 if z.get('type') == 'Mechanik AI':
@@ -599,7 +576,7 @@ else:
                                     "type": "Mechanik AI",
                                     "raport": f"**Pytanie do systemu:** {mech_query}\n\n**Diagnoza Mechanika:**\n{mech_resp}"
                                 })
-                                user_history = user_history[-10:] # ZABEZPIECZENIE: Zapisujemy tylko 10 ostatnich akcji!
+                                user_history = user_history[-10:]
                                 supabase.table('konta').update({"zadania": user_history}).eq('email', user_data['email']).execute()
                                 
                                 st.success("Analiza zakończona! Wskazówki zostały zapisane w Twojej historii lotów:")
@@ -741,7 +718,7 @@ else:
                                             "raport": txt, "type": st.session_state.industry_select, 
                                             "premium": (cost==2), "stats": stats
                                         })
-                                        history = history[-10:] # ZABEZPIECZENIE: Zapisujemy tylko 10 ostatnich akcji!
+                                        history = history[-10:] 
                                         
                                         supabase.table('konta').update({
                                             "zadania": history, "tokeny": user_data['tokeny'] - cost
