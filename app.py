@@ -13,6 +13,7 @@ import shutil
 import time
 import json
 import re
+import uuid
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -174,6 +175,30 @@ def get_decoder():
     return path
 
 # ==========================================
+# INTELIGENTNE DEKODOWANIE (NOWA FUNKCJA)
+# ==========================================
+@st.cache_data(show_spinner=False)
+def decode_file(file_bytes, file_name):
+    """Zapisuje, dekoduje plik BBL i zwraca listę poprawnych (niepustych) lotów CSV."""
+    temp_dir = f"/tmp/fpv_decode_{uuid.uuid4().hex[:8]}"
+    os.makedirs(temp_dir, exist_ok=True)
+    file_path = os.path.join(temp_dir, file_name)
+    
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
+        
+    if file_name.lower().endswith('.csv'):
+        return [file_path]
+    else:
+        dec = get_decoder()
+        subprocess.run([dec, file_path], stdout=subprocess.DEVNULL, cwd=temp_dir)
+        csvs = sorted(glob.glob(os.path.join(temp_dir, "*.csv")))
+        
+        # Filtrowanie plików, usuwamy śmieci i "puste" uzbrojenia (< 3KB to przeważnie same nagłówki)
+        valid_csvs = [c for c in csvs if os.path.getsize(c) > 3072] 
+        return valid_csvs
+
+# ==========================================
 # 4. SILNIK WIZUALIZACJI
 # ==========================================
 def render_terminal_hud(df, mode="Real", premium=False):
@@ -250,7 +275,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
             
             if v_col and mode == "Real":
@@ -258,10 +283,10 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
-                f_bat.update_layout(title="Spadek napięcia a gaz", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+                f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
                 
-            if not has_data: st.info("Brak danych o zasilaniu w logu symulatora.")
+            if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
@@ -279,42 +304,20 @@ if st.session_state.auth_user is None:
             pw = st.text_input("Hasło", type="password")
             st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
             if st.button("Zaloguj się do panelu"):
-                if em.lower() == 'admin@fpv.pl':
-                    res = supabase.table('konta').select('*').eq('email', em).execute()
-                    if res.data and res.data[0]['haslo'] == pw:
+                res = supabase.table('konta').select('*').eq('email', em).execute()
+                if res.data and res.data[0]['haslo'] == pw:
+                    
+                    is_verified = res.data[0].get('zweryfikowany')
+                    if em.lower() == 'admin@fpv.pl':
+                        is_verified = True 
+                        
+                    if is_verified is False:
+                        st.error("⚠️ Twoje konto oczekuje na weryfikację. Skontaktuj się z Administratorem.")
+                    else:
                         st.session_state.auth_user = em
                         st.session_state.role = res.data[0]['rola']
                         st.rerun()
-                    else: st.error("Nieprawidłowe hasło administratora.")
-                else:
-                    try:
-                        # LOGOWANIE PRZEZ SUPABASE AUTH (Wymusza sprawdzenie maila)
-                        res_auth = supabase.auth.sign_in_with_password({"email": em, "password": pw})
-                        
-                        # Jeśli brak błędów - weryfikacja była pomyślna.
-                        supabase.table('konta').update({"zweryfikowany": True}).eq('email', em).execute()
-                        
-                        res = supabase.table('konta').select('*').eq('email', em).execute()
-                        st.session_state.auth_user = em
-                        st.session_state.role = res.data[0]['rola']
-                        st.rerun()
-                    except Exception as e:
-                        err_msg = str(e).lower()
-                        # Fallback jeśli błąd to tylko niezweryfikowany e-mail
-                        if "email not confirmed" in err_msg or "unverified" in err_msg or "not verified" in err_msg:
-                            st.error("⚠️ Twój adres e-mail nie został jeszcze zweryfikowany! Sprawdź skrzynkę pocztową i kliknij w link aktywacyjny (lub poproś Admina o ręczną aktywację).")
-                        else:
-                            # Ostateczny fallback do naszej bazy, jeśli ktoś nie ma jeszcze konta w Auth, ale istnieje w tabeli (Stare konta)
-                            res = supabase.table('konta').select('*').eq('email', em).execute()
-                            if res.data and res.data[0]['haslo'] == pw:
-                                if res.data[0].get('zweryfikowany') is True:
-                                    st.session_state.auth_user = em
-                                    st.session_state.role = res.data[0]['rola']
-                                    st.rerun()
-                                else:
-                                    st.error("⚠️ Twoje konto oczekuje na weryfikację. Sprawdź e-mail lub skontaktuj się z Administratorem.")
-                            else:
-                                st.error("Nieprawidłowy adres e-mail lub hasło.")
+                else: st.error("Nieprawidłowy adres e-mail lub hasło.")
             st.markdown("</div>", unsafe_allow_html=True)
             
         with t2:
@@ -330,22 +333,11 @@ if st.session_state.auth_user is None:
                     if not is_valid:
                         st.error(msg)
                     else:
-                        try:
-                            # 1. TWORZENIE KONTA W AUTH (Wysyła maila)
-                            supabase.auth.sign_up({
-                                "email": rem,
-                                "password": rpw
-                            })
-                            
-                            # 2. ZAPIS DO NASZEJ TABELI Z FLAGĄ FALSE
-                            supabase.table('konta').insert({
-                                'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
-                                'tokeny': 10, 'zadania': [], 'zweryfikowany': False
-                            }).execute()
-                            
-                            st.success("Konto założone pomyślnie! Sprawdź swoją skrzynkę e-mail i kliknij link weryfikacyjny (sprawdź też folder SPAM).")
-                        except Exception as e:
-                            st.error(f"Wystąpił problem z systemem rejestracji: Sprawdź ustawienia bazy. Szczegóły: {e}")
+                        supabase.table('konta').insert({
+                            'email': rem, 'haslo': rpw, 'imie': rnm, 'rola': 'Kursant', 
+                            'tokeny': 10, 'zadania': [], 'zweryfikowany': False
+                        }).execute()
+                        st.success("Konto założone pomyślnie! Oczekuj na weryfikację przez Administratora.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -493,15 +485,20 @@ if is_instructor:
 
         df_active = None
         if log_file:
-            with st.status("Ekstrakcja danych...", expanded=False) as status:
-                if log_file.name.endswith('.csv'): df_active = pd.read_csv(log_file)
+            # NOWA LOGIKA DEKODOWANIA I WYBORU LOTU (INSTRUKTOR)
+            valid_csvs = decode_file(log_file.getvalue(), log_file.name)
+            if not valid_csvs:
+                st.warning("⚠️ Ten plik nie zawiera poprawnych danych lotu (jest pusty lub to był tylko szybki test uzbrojenia silników).")
+            else:
+                if len(valid_csvs) > 1:
+                    options = {c: f"Zapis nr {i+1} (Rozmiar: {os.path.getsize(c)//1024} KB)" for i, c in enumerate(valid_csvs)}
+                    selected_csv = st.selectbox("Wykryto kilka lotów w tym pliku. Wybierz jeden do analizy:", list(options.keys()), format_func=lambda x: options[x])
                 else:
-                    dec = get_decoder()
-                    with open("/tmp/i.bbl", "wb") as f: f.write(log_file.getbuffer())
-                    subprocess.run([dec, "/tmp/i.bbl"], stdout=subprocess.DEVNULL)
-                    csvs = sorted(glob.glob("/tmp/i*.csv"))
-                    if csvs: df_active = pd.read_csv(csvs[0])
-                status.update(label="Dane zdekodowane.", state="complete", expanded=False)
+                    selected_csv = valid_csvs[0]
+                    
+                with st.status("Ekstrakcja danych...", expanded=False) as status:
+                    df_active = pd.read_csv(selected_csv)
+                    status.update(label="Dane zdekodowane pomyślnie.", state="complete", expanded=False)
 
         if df_active is not None:
             stats = render_terminal_hud(df_active, mode="Real" if inst_env=="Lot rzeczywisty" else "Sim", premium=True)
@@ -785,17 +782,24 @@ else:
             u_log = st.file_uploader("Upuść plik z logami z lotu (.bbl lub .csv)", type=['bbl', 'csv'], label_visibility="collapsed")
             
             if u_log:
-                st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
-                if st.button(f"ROZPOCZNIJ ANALIZĘ (-{cost} TOKENÓW)"):
-                    if user_data.get('tokeny', 0) >= cost:
-                        with st.status("Trwa wczytywanie i analiza danych...", expanded=True) as status:
-                            dec = get_decoder()
-                            with open("/tmp/u.bbl", "wb") as f: f.write(u_log.getbuffer())
-                            subprocess.run([dec, "/tmp/u.bbl"], stdout=subprocess.DEVNULL)
-                            csvs = sorted(glob.glob("/tmp/u*.csv"))
-                            
-                            if csvs:
-                                df = pd.read_csv(csvs[0])
+                # NOWA LOGIKA DEKODOWANIA I WYBORU LOTU (KURSANT)
+                valid_csvs = decode_file(u_log.getvalue(), u_log.name)
+                
+                if not valid_csvs:
+                    st.warning("⚠️ Ten plik nie zawiera poprawnych danych lotu (jest pusty lub to był tylko szybki test uzbrojenia silników). Wgraj inny plik.")
+                else:
+                    if len(valid_csvs) > 1:
+                        options = {c: f"Zapis nr {i+1} (Rozmiar: {os.path.getsize(c)//1024} KB)" for i, c in enumerate(valid_csvs)}
+                        selected_csv = st.selectbox("Wykryto kilka lotów w tym pliku. Wybierz ten, który chcesz przeanalizować:", list(options.keys()), format_func=lambda x: options[x])
+                    else:
+                        selected_csv = valid_csvs[0]
+                        st.success("✅ Wykryto 1 poprawny lot w pliku.")
+                        
+                    st.markdown("<div class='cta-btn'>", unsafe_allow_html=True)
+                    if st.button(f"ROZPOCZNIJ ANALIZĘ (-{cost} TOKENÓW)"):
+                        if user_data.get('tokeny', 0) >= cost:
+                            with st.status("Trwa wczytywanie i analiza danych...", expanded=True) as status:
+                                df = pd.read_csv(selected_csv)
                                 stats = render_terminal_hud(df, mode=st.session_state.env_select, premium=(cost==2))
                                 
                                 if init_ai():
@@ -823,5 +827,5 @@ else:
                                         st.session_state.flow_state = 'launchpad' 
                                         st.rerun()
                                     except: st.error("Niestety wystąpił problem podczas łączenia się z modułem AI.")
-                    else: st.error("Niewystarczająca liczba tokenów na koncie, aby rozpocząć.")
-                st.markdown("</div>", unsafe_allow_html=True)
+                        else: st.error("Niewystarczająca liczba tokenów na koncie, aby rozpocząć.")
+                    st.markdown("</div>", unsafe_allow_html=True)
