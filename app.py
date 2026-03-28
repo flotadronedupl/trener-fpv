@@ -13,6 +13,7 @@ import shutil
 import time
 import json
 import re
+import uuid
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -36,11 +37,10 @@ def init_session():
 init_session()
 
 # ==========================================
-# 1B. ZAAWANSOWANY SYSTEM MONITOROWANIA API
+# 1B. ZAAWANSOWANY SYSTEM MONITOROWANIA API (RATE LIMITING)
 # ==========================================
 @st.cache_resource
 def get_ai_tracker():
-    # Globalna lista w pamięci serwera przechowująca czasy zapytań
     return []
 
 def get_ai_capacity():
@@ -52,7 +52,6 @@ def get_ai_capacity():
     available = max(0, 15 - len(tracker))
     wait_time = 0
     if available == 0 and len(tracker) > 0:
-        # Obliczamy ile sekund zostało, aż najstarsze zapytanie się zdezaktualizuje
         wait_time = 60 - (now - tracker[0])
         
     return available, wait_time
@@ -65,17 +64,21 @@ def render_ai_status():
     if avail > 0:
         st.markdown(f"<div style='text-align: right; color: #8cbf8c; font-size: 0.85em; margin-bottom: 5px; font-weight: bold;'>🟢 Sieć AI: Gotowa | Przepustowość w tej minucie: {avail}/15</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<div style='text-align: right; color: #ef4444; font-size: 0.85em; margin-bottom: 5px; font-weight: bold;'>🔴 Sieć AI: Przeciążona | Następne okno wolne za: {int(wait)} s</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: right; color: #ef4444; font-size: 0.85em; margin-bottom: 5px; font-weight: bold;'>🔴 Sieć AI: Przeciążona | Następne wolne okno za: {int(wait)} sekund</div>", unsafe_allow_html=True)
 
-# ==========================================
-# 2. LOGIKA POMOCNICZA I UI
-# ==========================================
+# WALIDACJA HASŁA
 def is_password_strong(password):
-    if len(password) < 6: return False, "Hasło musi mieć co najmniej 6 znaków."
-    if not re.search(r"[A-Z]", password): return False, "Hasło musi zawierać co najmniej jedną wielką literę."
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password): return False, "Hasło musi zawierać co najmniej jeden znak specjalny."
+    if len(password) < 6:
+        return False, "Hasło musi mieć co najmniej 6 znaków."
+    if not re.search(r"[A-Z]", password):
+        return False, "Hasło musi zawierać co najmniej jedną wielką literę."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return False, "Hasło musi zawierać co najmniej jeden znak specjalny."
     return True, ""
 
+# ==========================================
+# 2. MODERN PREMIUM UI (CSS)
+# ==========================================
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -108,10 +111,14 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
     html_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html_text)
     html_text = re.sub(r'### (.*)', r'<h3>\1</h3>', html_text)
     html_text = html_text.replace('\n', '<br>')
+    
     health_pct = max(0, min(100, stats_dict.get('health', 0)))
-    roll_pct = max(0, min(100, 100 - (stats_dict.get('jr', 0) * 12)))
-    pitch_pct = max(0, min(100, 100 - (stats_dict.get('jp', 0) * 12)))
-    g_pct = max(0, min(100, (stats_dict.get('max_g', 1) / 10.0) * 100))
+    roll_jerk = stats_dict.get('jr', 0)
+    roll_pct = max(0, min(100, 100 - (roll_jerk * 12)))
+    pitch_jerk = stats_dict.get('jp', 0)
+    pitch_pct = max(0, min(100, 100 - (pitch_jerk * 12)))
+    max_g = stats_dict.get('max_g', 1)
+    g_pct = max(0, min(100, (max_g / 10.0) * 100))
     
     html = f"""
     <html>
@@ -133,23 +140,27 @@ def generate_html_report(date, score, report_text, stats_dict, pilot_name):
         </style>
     </head>
     <body>
-        <div class="header"><h1>Raport Treningowy FPV</h1><p style="color: #666; font-size: 1.1em;">Data lotu: <b>{date}</b> | Pilot: <b>{pilot_name}</b></p></div>
+        <div class="header">
+            <h1>Raport Treningowy FPV</h1>
+            <p style="color: #666; font-size: 1.1em;">Data lotu: <b>{date}</b> | Pilot: <b>{pilot_name}</b></p>
+        </div>
         <div class="score">Ocena lotu: {score}/10</div>
         <div class="charts-container">
             <div class="chart-title">Analiza Telemetryczna (Wizualizacja)</div>
             <div class="bar-row"><div class="bar-label"><span>Kondycja maszyny</span><span>{health_pct:.0f}%</span></div><div class="bar-bg"><div class="bar-fill" style="width: {health_pct}%;"></div></div></div>
-            <div class="bar-row"><div class="bar-label"><span>Płynność Osi Roll (Mniej = lepiej)</span><span>{stats_dict.get('jr', 0):.2f}</span></div><div class="bar-bg"><div class="bar-fill" style="width: {roll_pct}%;"></div></div></div>
-            <div class="bar-row"><div class="bar-label"><span>Płynność Osi Pitch (Mniej = lepiej)</span><span>{stats_dict.get('jp', 0):.2f}</span></div><div class="bar-bg"><div class="bar-fill" style="width: {pitch_pct}%;"></div></div></div>
-            <div class="bar-row"><div class="bar-label"><span>Max Przeciążenie</span><span>{stats_dict.get('max_g', 1):.1f} G</span></div><div class="bar-bg"><div class="bar-fill gforce" style="width: {g_pct}%;"></div></div></div>
+            <div class="bar-row"><div class="bar-label"><span>Płynność Osi Roll (Mniej = lepiej)</span><span>{roll_jerk:.2f}</span></div><div class="bar-bg"><div class="bar-fill" style="width: {roll_pct}%;"></div></div></div>
+            <div class="bar-row"><div class="bar-label"><span>Płynność Osi Pitch (Mniej = lepiej)</span><span>{pitch_jerk:.2f}</span></div><div class="bar-bg"><div class="bar-fill" style="width: {pitch_pct}%;"></div></div></div>
+            <div class="bar-row"><div class="bar-label"><span>Max Przeciążenie</span><span>{max_g:.1f} G</span></div><div class="bar-bg"><div class="bar-fill gforce" style="width: {g_pct}%;"></div></div></div>
         </div>
         <div class="content-box">{html_text}</div>
+        <p style="margin-top: 50px; text-align: center; color: #999; font-size: 0.8em;">Wygenerowano automatycznie przez FPV AI Academy</p>
     </body>
     </html>
     """
     return html
 
 # ==========================================
-# 3. RDZEŃ SYSTEMU Z NOWYM AI MANAGEREM
+# 3. RDZEŃ SYSTEMU Z BEZPIECZNYM AI MANAGEREM
 # ==========================================
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -165,9 +176,9 @@ def call_ai_safe(prompt, is_json=True):
     
     if avail <= 0:
         if is_json:
-            return f'{{"ocena": 0, "diagnoza": "Przeciążenie sieci AI. Moduł analityczny aktualnie ocenia loty innych pilotów. Twoje okno analityczne otworzy się za {int(wait)} sekund. Odśwież i spróbuj ponownie.", "zadanie": "Wykorzystaj ten czas na naładowanie pakietu."}}'
+            return f'{{"ocena": 0, "diagnoza": "Serwery analityczne są w tej chwili obciążone. Twoje okno diagnostyczne otworzy się za {int(wait)} sekund. Odśwież i spróbuj ponownie.", "zadanie": "Wykorzystaj ten czas na zmianę pakietu w dronie."}}'
         else:
-            return f"⚠️ Sieć serwisu AI jest obecnie w pełni obciążona. Twoje okno diagnostyczne otworzy się za {int(wait)} sekund. Proszę odświeżyć system."
+            return f"⚠️ Sieć serwisu AI jest obecnie w pełni obciążona. Twoje okno diagnostyczne otworzy się za {int(wait)} sekund. Proszę odczekać i spróbować ponownie."
             
     try:
         register_ai_call()
@@ -175,8 +186,8 @@ def call_ai_safe(prompt, is_json=True):
         best = next((m for m in models if '1.5-flash' in m), models[0])
         return genai.GenerativeModel(best).generate_content(prompt).text
     except Exception as e:
-        if is_json: return f'{{"ocena": 0, "diagnoza": "Krytyczny błąd połączenia z modułem AI.", "zadanie": "Brak zadań."}}'
-        else: return "Krytyczny błąd połączenia z modułem AI."
+        if is_json: return f'{{"ocena": 0, "diagnoza": "Wystąpił krytyczny błąd połączenia z modułem sztucznej inteligencji.", "zadanie": "Brak zadań."}}'
+        else: return "Wystąpił krytyczny błąd połączenia z modułem sztucznej inteligencji."
 
 @st.cache_resource(show_spinner=False)
 def get_decoder():
@@ -227,19 +238,25 @@ def render_terminal_hud(df, mode="Real", premium=False):
     jy = df[yaw].diff().abs().mean() if yaw else 0
     smoothness = max(0, 10 - ((jr + jp + jy) * 0.8))
     avg_t = df[thr].mean()
-    max_g = (np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2)/2048.0).max() if has_acc else 1.0
-    health = max(0, min(100, 100 - ((jr + jp) * 12)))
+    
+    max_g = 1.0
+    if has_acc:
+        g_vector = np.sqrt(df[acc_x[0]]**2 + df[acc_y[0]]**2 + df[acc_z[0]]**2) / 2048.0
+        max_g = g_vector.max()
 
     st.markdown("<p class='mono-text'>WYNIKI TELEMETRII</p>", unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Płynność lotu", f"{smoothness:.1f} / 10")
     m2.metric("Średni gaz", f"{avg_t:.0f}")
     m3.metric("Max przeciążenie", f"{max_g:.1f} G" if has_acc else "Brak danych")
+    
+    health = max(0, min(100, 100 - ((jr + jp) * 12)))
     m4.metric("Kondycja drona", f"{health:.0f}%")
 
     if premium:
         st.markdown("<br><p class='mono-text'>ANALIZA ZAAWANSOWANA (PREMIUM)</p>", unsafe_allow_html=True)
         t1, t2, t3, t4 = st.tabs(["Telemetria drążków", "Analiza przeciążeń (G-Force)", "Trajektoria 3D", "Silniki i zasilanie"])
+        
         pdf = df.iloc[::max(1, len(df)//3000)]
         
         with t1:
@@ -249,6 +266,7 @@ def render_terminal_hud(df, mode="Real", premium=False):
             if yaw: fig.add_trace(go.Scatter(y=pdf[yaw], name="Yaw", line=dict(color='#FFFFFF', width=1, dash='dot')))
             fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=10,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
+            
         with t2:
             if has_acc:
                 g_series = np.sqrt(pdf[acc_x[0]]**2 + pdf[acc_y[0]]**2 + pdf[acc_z[0]]**2) / 2048.0
@@ -258,28 +276,34 @@ def render_terminal_hud(df, mode="Real", premium=False):
                 fig_g.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=10,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_g, use_container_width=True)
             else: st.info("Brak danych G-Force.")
+
         with t3:
-            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), mode='lines', line=dict(color=pdf[thr], colorscale='Greens', width=6))])
+            fig3 = go.Figure(data=[go.Scatter3d(x=pdf[roll].cumsum()/500, y=pdf[pitch].cumsum()/500, z=np.arange(len(pdf)), 
+                                mode='lines', line=dict(color=pdf[thr], colorscale='Greens', width=6))])
             fig3.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', scene=dict(bgcolor='rgba(0,0,0,0)'))
             st.plotly_chart(fig3, use_container_width=True)
+            
         with t4:
             v_col = [c for c in df.columns if 'vbat' in c.lower()]
             mot_cols = [c for c in df.columns if 'motor[' in c.lower() or 'motor0' in c.lower()]
             has_data = False
+            
             if mot_cols and len(mot_cols) >= 4:
                 has_data = True
                 mot_avgs = [df[m].mean() for m in mot_cols[:4]]
                 fig_mot = go.Figure(data=[go.Bar(x=['Silnik 1', 'Silnik 2', 'Silnik 3', 'Silnik 4'], y=mot_avgs, marker_color=ACCENT_LIGHT)])
-                fig_mot.update_layout(title="Średnie obciążenie", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_mot.update_layout(title="Średnie obciążenie silników", template="plotly_dark", height=250, margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_mot, use_container_width=True)
+            
             if v_col and mode == "Real":
                 has_data = True
                 f_bat = make_subplots(specs=[[{"secondary_y": True}]])
                 f_bat.add_trace(go.Scatter(y=pdf[v_col[0]]/100, name="Napięcie (V)", line=dict(color='#F8FAFC', width=2)), secondary_y=False)
                 f_bat.add_trace(go.Scatter(y=pdf[thr], name="Gaz", line=dict(color=ACCENT_LIGHT, width=1), fill='tozeroy', opacity=0.3), secondary_y=True)
-                f_bat.update_layout(title="Spadek napięcia a gaz", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
+                f_bat.update_layout(title="Spadek napięcia a użycie gazu", template="plotly_dark", height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(f_bat, use_container_width=True)
-            if not has_data: st.info("Brak danych o zasilaniu w logu.")
+                
+            if not has_data: st.info("Brak wystarczających danych o zasilaniu w logu symulatora.")
             
     return {"jr": float(jr), "jp": float(jp), "health": float(health), "avg_t": float(avg_t), "max_g": float(max_g)}
 
@@ -299,8 +323,10 @@ if st.session_state.auth_user is None:
             if st.button("Zaloguj się do panelu"):
                 res = supabase.table('konta').select('*').eq('email', em).execute()
                 if res.data and res.data[0]['haslo'] == pw:
+                    
                     is_verified = res.data[0].get('zweryfikowany')
-                    if em.lower() == 'admin@fpv.pl': is_verified = True 
+                    if em.lower() == 'admin@fpv.pl':
+                        is_verified = True 
                         
                     if is_verified is False:
                         st.error("⚠️ Twoje konto oczekuje na weryfikację. Skontaktuj się z Administratorem.")
@@ -336,6 +362,7 @@ if st.session_state.auth_user is None:
 # 6. LOGIKA UPRAWNIEŃ
 # ==========================================
 user_data = supabase.table('konta').select('*').eq('email', st.session_state.auth_user).execute().data[0]
+
 is_admin = (user_data['rola'].lower() == 'admin') or (user_data['email'].lower() == 'admin@fpv.pl')
 is_instructor = (user_data['rola'].lower() in ['instruktor', 'admin']) or is_admin
 
@@ -366,6 +393,7 @@ if is_instructor:
         
         display_names = [f"✅ {k['email']}" if k.get('zweryfikowany') is not False else f"❌ {k['email']}" for k in cadets]
         selected_display = st.radio("Wybierz użytkownika:", display_names, label_visibility="collapsed")
+        
         selected_email = selected_display[2:] 
         target_data = next(k for k in cadets if k['email'] == selected_email)
         
@@ -388,12 +416,14 @@ if is_instructor:
         
         if is_admin:
             st.markdown("<br><p class='mono-text'>ZARZĄDZANIE KONTAMI (ADMIN)</p>", unsafe_allow_html=True)
+            
             if target_data.get('zweryfikowany') is False:
                 if st.button("✅ Zweryfikuj to konto (Wpuść)", use_container_width=True):
                     supabase.table('konta').update({"zweryfikowany": True}).eq('email', selected_email).execute()
                     st.success("Konto zweryfikowane! Użytkownik może się teraz zalogować.")
                     time.sleep(1)
                     st.rerun()
+            
             if target_data['rola'].lower() == 'kursant':
                 if st.button("🌟 Nadaj Rangę Instruktora", use_container_width=True):
                     supabase.table('konta').update({"rola": "Instruktor"}).eq('email', selected_email).execute()
@@ -489,9 +519,12 @@ if is_instructor:
                     raw = call_ai_safe(prompt, is_json=True)
                     try:
                         js = json.loads(raw.replace("```json","").replace("```","").strip())
-                        st.session_state.instructor_draft = f"### Analiza lotu: {inst_ind}\n**OCENA LOTU:** {js['ocena']}/10\n\n**WSKAZÓWKI TRENERA:**\n{js['diagnoza']}\n\n**ZADANIE NA NASTĘPNY TRENING:**\n{js['zadanie']}"
-                        st.session_state.temp_metrics = stats
-                    except: st.error("Wystąpił błąd parsowania AI lub sieć jest przeciążona.")
+                        if js.get('ocena') == 0 and "Przeciążenie" in js.get('diagnoza', ''):
+                            st.error(js.get('diagnoza'))
+                        else:
+                            st.session_state.instructor_draft = f"### Analiza lotu: {inst_ind}\n**OCENA LOTU:** {js['ocena']}/10\n\n**WSKAZÓWKI TRENERA:**\n{js['diagnoza']}\n\n**ZADANIE NA NASTĘPNY TRENING:**\n{js['zadanie']}"
+                            st.session_state.temp_metrics = stats
+                    except: st.error("Wystąpił błąd w generowaniu odpowiedzi przez AI lub sieć jest przeciążona.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         if st.session_state.instructor_draft:
@@ -584,8 +617,8 @@ else:
                 roll_jerks = [z['stats'].get('jr', 0) for z in history]
                 pitch_jerks = [z['stats'].get('jp', 0) for z in history]
                 fig_prog = go.Figure()
-                fig_prog.add_trace(go.Scatter(x=dates, y=roll_jerks, mode='lines+markers', name='Roll Jerk', line=dict(color=ACCENT_LIGHT, width=3)))
-                fig_prog.add_trace(go.Scatter(x=dates, y=pitch_jerks, mode='lines+markers', name='Pitch Jerk', line=dict(color='#FFFFFF', dash='dot')))
+                fig_prog.add_trace(go.Scatter(x=dates, y=roll_jerks, mode='lines+markers', name='Roll Jerk (Obrót)', line=dict(color=ACCENT_LIGHT, width=3)))
+                fig_prog.add_trace(go.Scatter(x=dates, y=pitch_jerks, mode='lines+markers', name='Pitch Jerk (Przód/Tył)', line=dict(color='#FFFFFF', dash='dot')))
                 fig_prog.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_prog, use_container_width=True)
             else: st.info("Wykonaj co najmniej dwie analizy lotu, aby zobaczyć swój wykres postępu.")
@@ -650,14 +683,48 @@ else:
 
             with w_vtx:
                 st.markdown("### Macierz Częstotliwości VTX (5.8 GHz)")
+                
+                vtx_matrix = pd.DataFrame({
+                    "Pasmo": ["Band A", "Band B", "Band E (Boscam)", "Fatshark (F)", "Raceband (R)"],
+                    "CH 1": [5865, 5733, 5705, 5740, 5658],
+                    "CH 2": [5845, 5752, 5685, 5760, 5695],
+                    "CH 3": [5825, 5771, 5665, 5780, 5732],
+                    "CH 4": [5805, 5790, 5645, 5800, 5769],
+                    "CH 5": [5785, 5809, 5885, 5820, 5806],
+                    "CH 6": [5765, 5828, 5905, 5840, 5843],
+                    "CH 7": [5745, 5847, 5925, 5860, 5880],
+                    "CH 8": [5725, 5866, 5945, 5880, 5917]
+                })
+                vtx_matrix = vtx_matrix.set_index('Pasmo')
+                
                 pilots_count = st.slider("Ilu pilotów leci jednocześnie?", 1, 8, 4)
                 optimal_freqs = {1:[5658], 2:[5658,5917], 3:[5658,5769,5917], 4:[5658,5732,5843,5917], 5:[5645,5705,5769,5843,5917], 6:[5645,5695,5760,5800,5860,5917], 7:[5645,5695,5740,5780,5820,5860,5917], 8:[5645,5685,5725,5760,5800,5840,5880,5917]}
                 active_freqs = optimal_freqs[pilots_count]
-                st.success(f"Zalecane ułożenie kanałów: **{len(active_freqs)} optymalnych częstotliwości (podświetlone)**")
+                
+                def highlight_active(row):
+                    return ['background-color: #336600; color: white; font-weight: bold' if val in active_freqs else '' for val in row]
+                
+                st.dataframe(vtx_matrix.style.apply(highlight_active, axis=1), use_container_width=True)
+                
+                freq_to_name = {
+                    5658: "R1", 5917: "R8", 5769: "R4", 5732: "R3", 5843: "R6",
+                    5645: "E4", 5705: "E1", 5695: "R2", 5760: "F2", 5800: "F4",
+                    5860: "F7", 5740: "F1", 5780: "F3", 5820: "F5", 5685: "E2",
+                    5725: "A8", 5840: "F6", 5880: "R7"
+                }
+                ch_names = [freq_to_name.get(f, str(f)) for f in active_freqs]
+                st.success(f"Zalecane ułożenie kanałów dla {pilots_count} osób: **{', '.join(ch_names)}**")
 
             with w_dict:
                 st.markdown("### Słowniczek FPV")
-                with st.expander("P-I-D (Proportional, Integral, Derivative)"): st.write("... Szybkość reakcji i trzymanie kąta ...")
+                with st.expander("P-I-D (Proportional, Integral, Derivative)"): 
+                    st.write("**P (Proportional)** - Szybkość reakcji drona na drążki i wiatr. Zbyt niskie = dron 'pływa', zbyt wysokie = szybkie wibracje (oscylacje).\n\n**I (Integral)** - Trzymanie zadanego kąta. Pomaga dronowi nie ulegać wpływom wiatru i odchyleniom środka ciężkości baterii.\n\n**D (Derivative)** - 'Amortyzator' dla wartości P. Zapobiega przelatywaniu poza cel (overshoot) po ostrym manewrze. Zbyt wysokie D powoduje bardzo mocne grzanie silników.")
+                with st.expander("Rates (RC Rate, Super Rate/Expo)"):
+                    st.write("**RC Rate** - Czułość na samym środku drążka. Im wyższa, tym szybciej dron reaguje na najdrobniejsze ruchy palcami.\n\n**Super Rate / Expo** - Czułość na samych krawędziach wychylenia drążka. Pozwala na super szybkie flipy i rolle, zachowując przy tym miękki środek niezbędny do płynnego lotu (Cinematic).")
+                with st.expander("Propwash (Oscylacje po zejściu)"):
+                    st.write("Wibracje drona, które pojawiają się, gdy gwałtownie zawracasz lub opadasz pionowo we własne 'brudne powietrze' wyrzucone wcześniej przez śmigła. Zjawisko to redukujemy m.in. optymalizując wartość 'D' w Betaflight.")
+                with st.expander("RPM Filtering (Filtry dwukierunkowe DShot)"):
+                    st.write("Bardzo zaawansowana funkcja, gdzie regulator ESC na żywo wysyła do kontrolera lotu informację z jaką prędkością obraca się każdy z czterech silników. Dzięki temu Betaflight filtruje tylko te konkretne częstotliwości, które generują wibracje z silników, pozwalając dronom latać znacznie czyściej.")
 
     elif st.session_state.flow_state == 'upload':
         st.markdown(f"<h2>ANALIZA LOTU: <span style='color: {ACCENT_LIGHT};'>{st.session_state.industry_select.upper()}</span></h2>", unsafe_allow_html=True)
